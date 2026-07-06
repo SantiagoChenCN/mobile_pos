@@ -8,7 +8,9 @@ Current state:
 - Four main screens: checkout, sales detail, daily summary, settings/import.
 - Calls the `core` module through service interfaces.
 - `.db` import is connected for Mingsheng `CJQ_GOODLIST` product databases.
-- Camera scanning and `.xlsx` import are still pending concrete adapters.
+- Camera scanning is connected through ZXing.
+- `.xlsx` import is still pending a concrete adapter.
+- Sales are currently kept in memory during the app session; persistent sales storage is the next important backend task.
 
 Frontend boundaries:
 
