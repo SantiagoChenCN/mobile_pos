@@ -13,8 +13,22 @@ import java.util.Map;
 import java.util.Optional;
 
 public final class InMemoryProductRepository implements ProductRepository {
+    private final Map<String, Product> byId = new HashMap<String, Product>();
     private final Map<String, Product> byBarcode = new HashMap<String, Product>();
     private final List<Product> products = new ArrayList<Product>();
+
+    @Override
+    public List<Product> all() {
+        return Collections.unmodifiableList(new ArrayList<Product>(products));
+    }
+
+    @Override
+    public Optional<Product> findById(String productId) {
+        if (productId == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(byId.get(productId.trim()));
+    }
 
     @Override
     public Optional<Product> findByBarcode(String barcode) {
@@ -159,22 +173,94 @@ public final class InMemoryProductRepository implements ProductRepository {
 
     @Override
     public void replaceAll(List<Product> newProducts) {
+        byId.clear();
         byBarcode.clear();
         products.clear();
         if (newProducts == null) {
             return;
         }
         for (Product product : newProducts) {
-            products.add(product);
-            if (!product.barcode().isEmpty()) {
-                byBarcode.put(product.barcode(), product);
+            addProduct(product);
+        }
+    }
+
+    @Override
+    public void upsert(Product product) {
+        if (product == null) {
+            return;
+        }
+        Optional<Product> existing = findById(product.id());
+        if (existing.isPresent()) {
+            removeIndexes(existing.get());
+            for (int i = 0; i < products.size(); i++) {
+                if (products.get(i).id().equals(product.id())) {
+                    products.set(i, product);
+                    addIndexes(product);
+                    return;
+                }
             }
         }
+        addProduct(product);
+    }
+
+    @Override
+    public Optional<Product> deleteById(String productId) {
+        Optional<Product> existing = findById(productId);
+        if (!existing.isPresent()) {
+            return Optional.empty();
+        }
+        Product product = existing.get();
+        products.remove(product);
+        removeIndexes(product);
+        return Optional.of(product);
+    }
+
+    @Override
+    public boolean barcodeExists(String barcode, String excludedProductId) {
+        Optional<Product> product = findByBarcode(barcode);
+        return product.isPresent() && !sameId(product.get(), excludedProductId);
+    }
+
+    @Override
+    public boolean exactNameExists(String name, String excludedProductId) {
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isEmpty()) {
+            return false;
+        }
+        for (Product product : products) {
+            if (product.name().equalsIgnoreCase(normalizedName) && !sameId(product, excludedProductId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
     public int count() {
         return products.size();
+    }
+
+    private void addProduct(Product product) {
+        products.add(product);
+        addIndexes(product);
+    }
+
+    private void addIndexes(Product product) {
+        byId.put(product.id(), product);
+        if (!product.barcode().isEmpty()) {
+            byBarcode.put(product.barcode(), product);
+        }
+    }
+
+    private void removeIndexes(Product product) {
+        byId.remove(product.id());
+        if (!product.barcode().isEmpty()) {
+            byBarcode.remove(product.barcode());
+        }
+    }
+
+    private boolean sameId(Product product, String productId) {
+        return productId != null && product.id().equals(productId.trim());
     }
 
     private static final class SearchHit {

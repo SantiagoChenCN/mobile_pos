@@ -7,10 +7,13 @@ import com.espsa.mobilepos.core.catalog.InMemoryProductRepository;
 import com.espsa.mobilepos.core.catalog.ProductCatalogService;
 import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CheckoutService;
+import com.espsa.mobilepos.core.editing.ProductEditingService;
+import com.espsa.mobilepos.core.editing.ProductOptionProvider;
 import com.espsa.mobilepos.core.importer.ProductImportException;
 import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.core.ledger.InMemorySaleRepository;
 import com.espsa.mobilepos.core.ledger.LedgerService;
+import com.espsa.mobilepos.core.library.ProductLibraryState;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.DefaultPriceCalculator;
@@ -27,6 +30,10 @@ public final class AppServices {
     private final InMemoryProductRepository productRepository;
     private final InMemorySaleRepository saleRepository;
     private final ProductLocalStore productLocalStore;
+    private final ProductEditingService productEditing;
+    private final ProductLibraryService productLibrary;
+    private final UserPreferencesStore preferencesStore;
+    private final AndroidFileNameResolver fileNameResolver;
     private String lastImportMessage = "";
     private Cart currentCart;
 
@@ -36,7 +43,11 @@ public final class AppServices {
             LedgerService ledger,
             InMemoryProductRepository productRepository,
             InMemorySaleRepository saleRepository,
-            ProductLocalStore productLocalStore
+            ProductLocalStore productLocalStore,
+            ProductEditingService productEditing,
+            ProductLibraryService productLibrary,
+            UserPreferencesStore preferencesStore,
+            AndroidFileNameResolver fileNameResolver
     ) {
         this.catalog = catalog;
         this.checkout = checkout;
@@ -44,20 +55,38 @@ public final class AppServices {
         this.productRepository = productRepository;
         this.saleRepository = saleRepository;
         this.productLocalStore = productLocalStore;
+        this.productEditing = productEditing;
+        this.productLibrary = productLibrary;
+        this.preferencesStore = preferencesStore;
+        this.fileNameResolver = fileNameResolver;
         this.currentCart = checkout.startCart();
     }
 
     public static AppServices create(Context context) {
         InMemoryProductRepository productRepository = new InMemoryProductRepository();
         ProductLocalStore productLocalStore = new ProductLocalStore();
-        List<Product> storedProducts = productLocalStore.load(context);
-        productRepository.replaceAll(storedProducts.isEmpty() ? demoProducts() : storedProducts);
+        ProductLibraryState state = loadInitialProductState(context, productLocalStore);
+        productRepository.replaceAll(state.products());
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
         ProductCatalogService catalog = new ProductCatalogService(productRepository);
         CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
         LedgerService ledger = new LedgerService(saleRepository, ZoneId.systemDefault());
-        return new AppServices(catalog, checkout, ledger, productRepository, saleRepository, productLocalStore);
+        ProductLibraryService productLibrary = new ProductLibraryService(context, productLocalStore, productRepository);
+        ProductOptionProvider optionProvider = new ProductOptionProvider(productLibrary::latestImportSnapshotProducts);
+        ProductEditingService productEditing = new ProductEditingService(productRepository, productLibrary, optionProvider);
+        return new AppServices(
+                catalog,
+                checkout,
+                ledger,
+                productRepository,
+                saleRepository,
+                productLocalStore,
+                productEditing,
+                productLibrary,
+                new UserPreferencesStore(),
+                new AndroidFileNameResolver()
+        );
     }
 
     public static AppServices createDemoServices() {
@@ -68,7 +97,30 @@ public final class AppServices {
         ProductCatalogService catalog = new ProductCatalogService(productRepository);
         CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
         LedgerService ledger = new LedgerService(saleRepository, ZoneId.systemDefault());
-        return new AppServices(catalog, checkout, ledger, productRepository, saleRepository, new ProductLocalStore());
+        ProductLocalStore productLocalStore = new ProductLocalStore();
+        ProductLibraryService productLibrary = new ProductLibraryService(null, productLocalStore, productRepository);
+        ProductOptionProvider optionProvider = new ProductOptionProvider(productLibrary::latestImportSnapshotProducts);
+        ProductEditingService productEditing = new ProductEditingService(productRepository, productLibrary, optionProvider);
+        return new AppServices(
+                catalog,
+                checkout,
+                ledger,
+                productRepository,
+                saleRepository,
+                productLocalStore,
+                productEditing,
+                productLibrary,
+                new UserPreferencesStore(),
+                new AndroidFileNameResolver()
+        );
+    }
+
+    private static ProductLibraryState loadInitialProductState(Context context, ProductLocalStore productLocalStore) {
+        try {
+            return productLocalStore.loadState(context);
+        } catch (ProductStoreException ex) {
+            return ProductLibraryState.empty();
+        }
     }
 
     private static List<Product> demoProducts() {
@@ -99,6 +151,18 @@ public final class AppServices {
         return saleRepository;
     }
 
+    public ProductEditingService productEditing() {
+        return productEditing;
+    }
+
+    public ProductLibraryService productLibrary() {
+        return productLibrary;
+    }
+
+    public UserPreferencesStore preferencesStore() {
+        return preferencesStore;
+    }
+
     public Cart currentCart() {
         return currentCart;
     }
@@ -109,11 +173,12 @@ public final class AppServices {
     }
 
     public ProductImportResult importMingshengDatabase(Context context, Uri uri) throws ProductImportException {
+        String fileName = fileNameResolver.displayName(context, uri);
         ProductImportResult result = new AndroidDbProductImporter().importFromUri(context, uri);
-        catalog.applyImport(result);
         try {
-            productLocalStore.save(context, result.products());
-        } catch (Exception ex) {
+            ProductLibraryState state = productLocalStore.saveImportResult(context, result, fileName);
+            productRepository.replaceAll(state.products());
+        } catch (ProductStoreException ex) {
             throw new ProductImportException("商品已读取，但保存到手机本地失败", ex);
         }
         lastImportMessage = "products=" + result.productCount() + ", promotions=" + result.promotionCount();

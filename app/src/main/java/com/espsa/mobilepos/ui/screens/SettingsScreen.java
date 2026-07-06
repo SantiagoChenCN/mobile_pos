@@ -7,7 +7,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.espsa.mobilepos.app.AppServices;
-import com.espsa.mobilepos.app.ImportGateway;
 import com.espsa.mobilepos.ui.AppLanguage;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
@@ -17,13 +16,13 @@ public final class SettingsScreen {
     private final Context context;
     private final AppServices services;
     private final AppLanguage language;
-    private final ImportGateway importGateway;
+    private final Runnable onToggleLanguage;
 
-    public SettingsScreen(Context context, AppServices services, AppLanguage language, ImportGateway importGateway) {
+    public SettingsScreen(Context context, AppServices services, AppLanguage language, Runnable onToggleLanguage) {
         this.context = context;
         this.services = services;
         this.language = language;
-        this.importGateway = importGateway;
+        this.onToggleLanguage = onToggleLanguage;
     }
 
     public View render() {
@@ -35,24 +34,13 @@ public final class SettingsScreen {
         page.addView(title, Views.matchWrap());
 
         page.addView(info(UiText.choose(language, "当前商品数", "Productos"), Integer.toString(services.catalog().productCount())));
-        page.addView(info("Android", "10+"));
+        page.addView(info(UiText.choose(language, "App 版本", "Version"), "debug"));
         page.addView(info(UiText.choose(language, "模式", "Modo"), UiText.choose(language, "单机离线", "Local sin sincronizacion")));
+        page.addView(info(UiText.choose(language, "当前语言", "Idioma"), language == AppLanguage.ZH ? "中文" : "Espanol"));
 
-        Button importButton = Views.button(context, UiText.choose(language, "导入鸣盛商品库 .db", "Importar base .db"));
-        importButton.setOnClickListener(v -> importGateway.requestImportFile());
-        page.addView(importButton, Views.matchWrap());
-
-        TextView note = Views.text(context, UiText.choose(
-                language,
-                "请选择 AGT_MAIN_20260705.db 这类鸣盛 SQLite 商品库。导入后会保存到手机本地。",
-                "Elija una base SQLite tipo AGT_MAIN_20260705.db. Queda guardada en el telefono."
-        ), 14, StyleGuide.MUTED);
-        note.setPadding(0, 12, 0, 0);
-        page.addView(note, Views.matchWrap());
-
-        if (!services.lastImportMessage().isEmpty()) {
-            page.addView(info(UiText.choose(language, "最近导入", "Ultima importacion"), services.lastImportMessage()));
-        }
+        Button languageButton = Views.button(context, language == AppLanguage.ZH ? "Cambiar a Espanol" : "切换到中文");
+        languageButton.setOnClickListener(v -> onToggleLanguage.run());
+        page.addView(languageButton, Views.matchWrap());
         return page;
     }
 

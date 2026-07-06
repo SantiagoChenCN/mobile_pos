@@ -7,7 +7,6 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
-import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -24,9 +23,11 @@ import com.espsa.mobilepos.ui.Screen;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
-import com.espsa.mobilepos.ui.screens.CheckoutScreen;
+import com.espsa.mobilepos.ui.screens.CheckoutSectionScreen;
 import com.espsa.mobilepos.ui.screens.DailySummaryScreen;
-import com.espsa.mobilepos.ui.screens.SalesScreen;
+import com.espsa.mobilepos.ui.screens.HomeScreen;
+import com.espsa.mobilepos.ui.screens.ImportScreen;
+import com.espsa.mobilepos.ui.screens.ProductEditScreen;
 import com.espsa.mobilepos.ui.screens.SettingsScreen;
 
 public final class MainActivity extends Activity implements ImportGateway, ScanGateway {
@@ -35,15 +36,18 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
 
     private AppServices services;
     private AppLanguage language = AppLanguage.ZH;
-    private Screen screen = Screen.CHECKOUT;
+    private Screen screen = Screen.HOME;
+    private Screen pendingScanScreen = Screen.CHECKOUT;
     private FrameLayout content;
-    private CheckoutScreen activeCheckoutScreen;
+    private CheckoutSectionScreen activeCheckoutSectionScreen;
+    private ProductEditScreen activeProductEditScreen;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         configureSystemBars();
         services = ((MobilePosApplication) getApplication()).services();
+        language = services.preferencesStore().loadLanguage(this);
         renderShell();
     }
 
@@ -61,7 +65,6 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
                 1
         ));
 
-        root.addView(bottomNav());
         setContentView(root);
         renderCurrentScreen();
     }
@@ -97,58 +100,120 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         header.setPadding(18, 14, 18, 10);
         header.setGravity(Gravity.CENTER_VERTICAL);
 
+        if (screen != Screen.HOME) {
+            Button home = Views.button(this, UiText.choose(language, "首页", "Inicio"));
+            home.setOnClickListener(v -> navigateHome());
+            header.addView(home);
+        }
+
         TextView title = Views.text(this, UiText.choose(language, "应急收银", "Caja de emergencia"), 22, StyleGuide.INK);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         header.addView(title, Views.weight(1));
 
         Button languageButton = Views.button(this, language == AppLanguage.ZH ? "ES" : "中");
-        languageButton.setOnClickListener(v -> {
-            language = language == AppLanguage.ZH ? AppLanguage.ES : AppLanguage.ZH;
-            renderShell();
-        });
+        languageButton.setOnClickListener(v -> toggleLanguage());
         header.addView(languageButton);
         return header;
     }
 
-    private View bottomNav() {
-        LinearLayout nav = Views.horizontal(this);
-        nav.setPadding(8, 8, 8, 8);
-        nav.setBackgroundColor(StyleGuide.INK);
-        addNavButton(nav, Screen.CHECKOUT, UiText.choose(language, "收银", "Caja"));
-        addNavButton(nav, Screen.SALES, UiText.choose(language, "明细", "Ventas"));
-        addNavButton(nav, Screen.DAILY, UiText.choose(language, "日账", "Diario"));
-        addNavButton(nav, Screen.SETTINGS, UiText.choose(language, "设置", "Ajustes"));
-        return nav;
-    }
-
-    private void addNavButton(LinearLayout nav, Screen target, String label) {
-        Button button = Views.button(this, label);
-        button.setEnabled(screen != target);
-        button.setOnClickListener(v -> {
-            screen = target;
-            renderShell();
-        });
-        nav.addView(button, Views.weight(1));
-    }
-
     private void renderCurrentScreen() {
         content.removeAllViews();
-        activeCheckoutScreen = null;
+        activeCheckoutSectionScreen = null;
+        activeProductEditScreen = null;
         View view;
-        if (screen == Screen.SALES) {
-            view = new SalesScreen(this, services, language, this::renderCurrentScreen).render();
+        if (screen == Screen.HOME) {
+            view = new HomeScreen(this, language, new HomeScreen.HomeNavigation() {
+                @Override
+                public void openProductEditing() {
+                    navigateTo(Screen.PRODUCT_EDIT);
+                }
+
+                @Override
+                public void openCheckout() {
+                    navigateTo(Screen.CHECKOUT);
+                }
+
+                @Override
+                public void openDailySummary() {
+                    navigateTo(Screen.DAILY);
+                }
+
+                @Override
+                public void openSettings() {
+                    navigateTo(Screen.SETTINGS);
+                }
+
+                @Override
+                public void openImport() {
+                    navigateTo(Screen.IMPORT);
+                }
+            }).render();
+        } else if (screen == Screen.PRODUCT_EDIT) {
+            activeProductEditScreen = new ProductEditScreen(this, services, language, this);
+            view = activeProductEditScreen.render();
+        } else if (screen == Screen.CHECKOUT) {
+            activeCheckoutSectionScreen = new CheckoutSectionScreen(this, services, language, this);
+            view = activeCheckoutSectionScreen.render();
         } else if (screen == Screen.DAILY) {
             view = new DailySummaryScreen(this, services, language).render();
         } else if (screen == Screen.SETTINGS) {
-            view = new SettingsScreen(this, services, language, this).render();
+            view = new SettingsScreen(this, services, language, this::toggleLanguage).render();
+        } else if (screen == Screen.IMPORT) {
+            view = new ImportScreen(this, services, language, this, this::renderShell).render();
         } else {
-            activeCheckoutScreen = new CheckoutScreen(this, services, language, this, () -> {
-                screen = Screen.SALES;
-                renderShell();
-            });
-            view = activeCheckoutScreen.render();
+            view = new HomeScreen(this, language, new HomeScreen.HomeNavigation() {
+                @Override
+                public void openProductEditing() {
+                    navigateTo(Screen.PRODUCT_EDIT);
+                }
+
+                @Override
+                public void openCheckout() {
+                    navigateTo(Screen.CHECKOUT);
+                }
+
+                @Override
+                public void openDailySummary() {
+                    navigateTo(Screen.DAILY);
+                }
+
+                @Override
+                public void openSettings() {
+                    navigateTo(Screen.SETTINGS);
+                }
+
+                @Override
+                public void openImport() {
+                    navigateTo(Screen.IMPORT);
+                }
+            }).render();
         }
         content.addView(view);
+    }
+
+    private void toggleLanguage() {
+        language = language == AppLanguage.ZH ? AppLanguage.ES : AppLanguage.ZH;
+        services.preferencesStore().saveLanguage(this, language);
+        renderShell();
+    }
+
+    private void navigateTo(Screen target) {
+        confirmLeaveIfNeeded(() -> {
+            screen = target;
+            renderShell();
+        });
+    }
+
+    private void navigateHome() {
+        navigateTo(Screen.HOME);
+    }
+
+    private void confirmLeaveIfNeeded(Runnable afterConfirm) {
+        if (screen == Screen.PRODUCT_EDIT && activeProductEditScreen != null && activeProductEditScreen.hasUnsavedChanges()) {
+            activeProductEditScreen.confirmDiscardChanges(afterConfirm);
+            return;
+        }
+        afterConfirm.run();
     }
 
     @Override
@@ -176,6 +241,7 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
 
     @Override
     public void requestBarcodeScan() {
+        pendingScanScreen = screen;
         startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_BARCODE_REQUEST);
     }
 
@@ -184,10 +250,18 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         if (requestCode == SCAN_BARCODE_REQUEST) {
             if (resultCode == RESULT_OK && data != null) {
                 String barcode = data.getStringExtra(ScannerActivity.EXTRA_BARCODE);
-                screen = Screen.CHECKOUT;
-                renderShell();
-                if (activeCheckoutScreen != null) {
-                    activeCheckoutScreen.addScannedBarcode(barcode);
+                if (pendingScanScreen == Screen.PRODUCT_EDIT) {
+                    screen = Screen.PRODUCT_EDIT;
+                    renderShell();
+                    if (activeProductEditScreen != null) {
+                        activeProductEditScreen.addScannedBarcode(barcode);
+                    }
+                } else {
+                    screen = Screen.CHECKOUT;
+                    renderShell();
+                    if (activeCheckoutSectionScreen != null) {
+                        activeCheckoutSectionScreen.addScannedBarcode(barcode);
+                    }
                 }
             }
             return;
@@ -196,5 +270,14 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         if (requestCode == IMPORT_FILE_REQUEST && resultCode == RESULT_OK && data != null) {
             onImportFileSelected(data.getData());
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (screen == Screen.HOME) {
+            super.onBackPressed();
+            return;
+        }
+        navigateHome();
     }
 }

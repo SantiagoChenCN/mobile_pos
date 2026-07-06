@@ -4,6 +4,13 @@ import com.espsa.mobilepos.core.catalog.InMemoryProductRepository;
 import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CartLine;
 import com.espsa.mobilepos.core.checkout.CheckoutService;
+import com.espsa.mobilepos.core.editing.ProductCreateResult;
+import com.espsa.mobilepos.core.editing.ProductDraft;
+import com.espsa.mobilepos.core.editing.ProductEditingService;
+import com.espsa.mobilepos.core.editing.ProductOptionProvider;
+import com.espsa.mobilepos.core.editing.ProductPersistenceException;
+import com.espsa.mobilepos.core.editing.ProductPersistencePort;
+import com.espsa.mobilepos.core.editing.ProductUpdateResult;
 import com.espsa.mobilepos.core.exporter.CsvSalesExportAdapter;
 import com.espsa.mobilepos.core.importer.MingshengProductMapper;
 import com.espsa.mobilepos.core.ledger.DailySummary;
@@ -51,6 +58,7 @@ public final class CoreSmokeTest {
         assertTrue("huevo search includes maple item", containsProductName(huevoResults, "Huevo Blanco Maple"));
         assertTrue("multi-word keyword search matches words in any order", productRepository.searchByName("maple huevo", Integer.MAX_VALUE).size() == 1);
         assertTrue("multi-word search ignores common connector words", productRepository.searchByName("maple de huevo", Integer.MAX_VALUE).size() == 1);
+        runProductEditingChecks(productRepository);
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
         CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
@@ -97,6 +105,55 @@ public final class CoreSmokeTest {
         System.out.println("Core smoke test passed");
     }
 
+    private static void runProductEditingChecks(InMemoryProductRepository productRepository) throws Exception {
+        ProductEditingService editing = new ProductEditingService(
+                productRepository,
+                new NoOpProductPersistence(),
+                new ProductOptionProvider(productRepository::all)
+        );
+
+        ProductCreateResult created = editing.createProduct(new ProductDraft(
+                "001",
+                "Azucar Local",
+                "",
+                "un",
+                "1500",
+                "",
+                ""
+        ));
+        assertTrue("product create succeeds", created.success());
+        assertTrue("created product searchable by barcode", editing.findByBarcode("001").isPresent());
+        assertTrue("empty category normalizes to almacen", Product.MANUAL_ALMACEN_CATEGORY.equals(created.product().category()));
+
+        ProductCreateResult duplicateBarcode = editing.createProduct(new ProductDraft(
+                "001",
+                "Azucar Copia",
+                "",
+                "un",
+                "1500",
+                "",
+                ""
+        ));
+        assertTrue("duplicate barcode rejected", !duplicateBarcode.success());
+
+        ProductUpdateResult updated = editing.updateProduct(created.product().id(), new ProductDraft(
+                "002",
+                "Azucar Local 1kg",
+                "almacen",
+                "un",
+                "1800",
+                "1600",
+                "2"
+        ));
+        assertTrue("product update succeeds", updated.success());
+        assertTrue("critical update detected", updated.criticalChanges());
+        assertTrue("old barcode removed", !editing.findByBarcode("001").isPresent());
+        assertTrue("new barcode indexed", editing.findByBarcode("002").isPresent());
+
+        assertTrue("delete removes product", editing.deleteProduct(created.product().id()).success());
+        assertTrue("deleted product not indexed", !editing.findByBarcode("002").isPresent());
+    }
+
     private static void assertAmount(String label, long expected, Money actual) {
         if (actual.amount() != expected) {
             throw new AssertionError(label + ": expected " + expected + " but got " + actual.amount());
@@ -116,5 +173,11 @@ public final class CoreSmokeTest {
             }
         }
         return false;
+    }
+
+    private static final class NoOpProductPersistence implements ProductPersistencePort {
+        @Override
+        public void saveManualProducts(List<Product> products) throws ProductPersistenceException {
+        }
     }
 }

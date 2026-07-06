@@ -1,9 +1,10 @@
 package com.espsa.mobilepos.ui;
 
 public enum Screen {
+    HOME,
+    PRODUCT_EDIT,
     CHECKOUT,
-    SALES,
     DAILY,
-    SETTINGS
+    SETTINGS,
+    IMPORT
 }
-
