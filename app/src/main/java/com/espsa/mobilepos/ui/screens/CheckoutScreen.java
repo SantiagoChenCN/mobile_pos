@@ -217,12 +217,15 @@ public final class CheckoutScreen {
 
     private View lineView(LinePriceResult linePrice) {
         CartLine line = linePrice.line();
-        LinearLayout row = Views.vertical(context);
-        row.setPadding(0, 12, 0, 12);
+        LinearLayout row = Views.horizontal(context);
+        row.setPadding(0, 10, 0, 10);
+
+        LinearLayout details = Views.vertical(context);
 
         TextView name = Views.text(context, line.product().name(), 18, StyleGuide.INK);
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        row.addView(name, Views.matchWrap());
+        name.setSingleLine(false);
+        details.addView(name, Views.matchWrap());
 
         TextView meta = Views.text(
                 context,
@@ -230,56 +233,115 @@ public final class CheckoutScreen {
                 14,
                 StyleGuide.MUTED
         );
-        row.addView(meta, Views.matchWrap());
+        details.addView(meta, Views.matchWrap());
 
-        LinearLayout quantityActions = Views.horizontal(context);
-        Button minus = Views.button(context, "-");
-        minus.setOnClickListener(v -> {
-            if (line.quantity() <= 1) {
-                cart.removeLine(line.id());
-            } else {
-                cart.replaceLine(line.withQuantity(line.quantity() - 1));
+        String markers = lineMarkers(linePrice);
+        if (!markers.isEmpty()) {
+            TextView marker = Views.text(context, markers, 13, StyleGuide.TEAL);
+            details.addView(marker, Views.matchWrap());
+        }
+        row.addView(details, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        Button menu = Views.button(context, UiText.choose(language, "操作", "Mas"));
+        menu.setTextSize(14);
+        menu.setMinWidth(dp(72));
+        menu.setOnClickListener(v -> showLineActionMenu(linePrice));
+        row.addView(menu, new LinearLayout.LayoutParams(dp(82), LinearLayout.LayoutParams.WRAP_CONTENT));
+        return row;
+    }
+
+    private String lineMarkers(LinePriceResult linePrice) {
+        StringBuilder markers = new StringBuilder();
+        if (linePrice.manualPriceApplied()) {
+            markers.append(UiText.choose(language, "已改价", "Precio editado"));
+        }
+        if (linePrice.lineDiscountAmount().amount() > 0) {
+            if (markers.length() > 0) {
+                markers.append("  ");
             }
-            refreshCart();
-        });
-        quantityActions.addView(minus, Views.weight(1));
+            markers.append(UiText.choose(language, "已优惠", "Desc. aplicado"));
+        }
+        if (linePrice.automaticPromotionApplied()) {
+            if (markers.length() > 0) {
+                markers.append("  ");
+            }
+            markers.append(UiText.choose(language, "促销", "Promo"));
+        }
+        return markers.toString();
+    }
 
-        Button plus = Views.button(context, "+");
-        plus.setOnClickListener(v -> {
-            cart.replaceLine(line.withQuantity(line.quantity() + 1));
-            refreshCart();
-        });
-        quantityActions.addView(plus, Views.weight(1));
+    private void showLineActionMenu(LinePriceResult linePrice) {
+        CartLine line = linePrice.line();
+        LinearLayout panel = Views.vertical(context);
+        panel.setPadding(dp(8), dp(8), dp(8), dp(4));
 
-        Button changePrice = Views.button(context, UiText.choose(language, "改价", "Precio"));
-        changePrice.setOnClickListener(v -> showLinePriceDialog(line));
-        quantityActions.addView(changePrice, Views.weight(1));
+        TextView name = Views.text(context, line.product().name(), 18, StyleGuide.INK);
+        name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        panel.addView(name, Views.matchWrap());
 
-        Button remove = Views.button(context, UiText.choose(language, "删除", "Borrar"));
-        remove.setOnClickListener(v -> {
+        TextView meta = Views.text(
+                context,
+                line.product().barcode() + "  x" + line.quantity() + "  $" + linePrice.appliedUnitPrice().amount() + "  = $" + linePrice.finalSubtotal().amount(),
+                14,
+                StyleGuide.MUTED
+        );
+        panel.addView(meta, Views.matchWrap());
+
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        LinearLayout quantityRow = Views.horizontal(context);
+        quantityRow.addView(lineActionButton("-", () -> changeLineQuantity(line, -1), dialogRef), Views.weight(1));
+        quantityRow.addView(lineActionButton("+", () -> changeLineQuantity(line, 1), dialogRef), Views.weight(1));
+        panel.addView(quantityRow, Views.matchWrap());
+
+        LinearLayout editRow = Views.horizontal(context);
+        editRow.addView(lineActionButton(UiText.choose(language, "改价", "Precio"), () -> showLinePriceDialog(line), dialogRef), Views.weight(1));
+        editRow.addView(lineActionButton(UiText.choose(language, "删除", "Borrar"), () -> {
             cart.removeLine(line.id());
             refreshCart();
-        });
-        quantityActions.addView(remove, Views.weight(1));
-        row.addView(quantityActions, Views.matchWrap());
+        }, dialogRef), Views.weight(1));
+        panel.addView(editRow, Views.matchWrap());
 
-        LinearLayout discountActions = Views.horizontal(context);
-        Button percent = Views.button(context, UiText.choose(language, "折扣%", "Desc. %"));
-        percent.setOnClickListener(v -> showLinePercentDiscountDialog(line));
-        discountActions.addView(percent, Views.weight(1));
+        LinearLayout discountRow = Views.horizontal(context);
+        discountRow.addView(lineActionButton(UiText.choose(language, "折扣%", "Desc. %"), () -> showLinePercentDiscountDialog(line), dialogRef), Views.weight(1));
+        discountRow.addView(lineActionButton(UiText.choose(language, "减价", "Desc. $"), () -> showLineFixedDiscountDialog(line), dialogRef), Views.weight(1));
+        panel.addView(discountRow, Views.matchWrap());
 
-        Button fixed = Views.button(context, UiText.choose(language, "减价", "Desc. $"));
-        fixed.setOnClickListener(v -> showLineFixedDiscountDialog(line));
-        discountActions.addView(fixed, Views.weight(1));
-
-        Button clearLine = Views.button(context, UiText.choose(language, "撤回改动", "Restaurar"));
-        clearLine.setOnClickListener(v -> {
+        Button clearLine = lineActionButton(UiText.choose(language, "撤回改动", "Restaurar"), () -> {
             cart.replaceLine(line.withoutManualAdjustments());
             refreshCart();
+        }, dialogRef);
+        panel.addView(clearLine, Views.matchWrap());
+
+        dialogRef[0] = new AlertDialog.Builder(context)
+                .setTitle(UiText.choose(language, "商品操作", "Item"))
+                .setView(panel)
+                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
+                .show();
+    }
+
+    private Button lineActionButton(String label, Runnable action, AlertDialog[] dialogRef) {
+        Button button = Views.button(context, label);
+        button.setOnClickListener(v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            action.run();
         });
-        discountActions.addView(clearLine, Views.weight(1));
-        row.addView(discountActions, Views.matchWrap());
-        return row;
+        return button;
+    }
+
+    private void changeLineQuantity(CartLine line, int delta) {
+        int newQuantity = line.quantity() + delta;
+        if (newQuantity <= 0) {
+            cart.removeLine(line.id());
+        } else {
+            cart.replaceLine(line.withQuantity(newQuantity));
+        }
+        refreshCart();
+    }
+
+    private int dp(int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     private void showNotFoundDialog() {
