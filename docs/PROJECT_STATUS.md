@@ -13,7 +13,7 @@
 - 英文构建副本：`E:\AndroidEmergencyPos`
 - 便携构建环境：`E:\AndroidBuildEnv`
 - 最新鸣盛商品数据库样本：`E:\手机收银软件开发\AGT_MAIN_20260705.db`
-- 最新 APK：`E:\AndroidEmergencyPos\app\build\outputs\apk\debug\app-debug.apk`
+- 最新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
 
 ## 远程与发布位置
 
@@ -50,6 +50,7 @@
 - 搜索支持大小写无关、重音符号无关、多关键词乱序、忽略 `de/del/el/la/los/las` 等常见西语连接词。
 - 搜索结果弹窗可滚动，并显示匹配数量。
 - 购物车支持改数量、删行、手动改价。
+- 收银页购物车商品行已改为紧凑布局，每行只显示商品名、条码、数量、单价、小计和右侧“操作 / Mas”按钮；改数量、改价、删除、折扣、减价、撤回改动等操作已移入二级操作弹窗。
 - 单行商品支持百分比优惠和固定金额优惠，并可撤回手动改价/优惠。
 - 整单支持百分比优惠和固定金额优惠，并可清除。
 - 自动优惠支持当前数据库中可读的优惠价和起购数量规则。
@@ -95,7 +96,8 @@
 - 2026-07-06 商品编辑前端接入后，完整 debug APK Gradle 构建成功。
 - 2026-07-06 修复收银/交易明细 tab 返回问题后，`CoreSmokeTest` 再次通过。
 - 2026-07-06 修复收银/交易明细 tab 返回问题后，完整 debug APK Gradle 构建成功。
-- 最新本地 APK：`E:\AndroidEmergencyPos\app\build\outputs\apk\debug\app-debug.apk`，大小 874181 bytes，构建时间 2026-07-06 20:06:46。
+- 2026-07-07 精简收银页商品行 UI 后，`CoreSmokeTest` 通过，完整 debug APK Gradle 构建成功。
+- 最新本地 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 876821 bytes，构建时间 2026-07-07 18:11:54。
 - 真实商品数据库中确认 `huevo`、`huevo blanco`、`maple` 等关键词存在匹配数据。
 - 搜索回归测试覆盖：
   - `huevo` 返回全部匹配测试商品。
@@ -105,6 +107,7 @@
 ## 尚未完成
 
 - 最新前端接入后还需要在真机或模拟器上做端到端手工验收：商品新建、修改、删除、导入、回滚、扫码进入商品编辑、收银加入商品、当前购物车快照不随商品编辑变化。
+- 收银和商品编辑中的关键词搜索在弹出结果前有短暂停顿，需优化搜索索引、结果数量限制或异步搜索体验。
 - Google Drive 中的 APK 尚未更新为本次 tab 修复后的新版本。
 - 销售记录持久化：当前销售单保存在内存里，App 被系统杀掉或重启后会丢失。需要实现本地销售存储。
 - 按日期导出 Excel/CSV 的 Android UI：core 已有 CSV 导出适配器，但手机界面还没有完整导出入口。
@@ -124,16 +127,19 @@
 
 ## 建议下一步
 
-1. 在真机或模拟器上按 `product_editing_plan.md` 测试清单验收商品编辑、导入、回滚、收银明细 tab 返回和收银快照兼容性。
-2. GitHub 发布副本已随本次修复同步；后续继续以 `android-emergency-pos` 为主开发目录，`mobile_pos_publish` 只作为发布副本。
-3. 将新版 APK 上传到 Google Drive，需要保留旧版本时使用新文件名上传。
-4. 继续补齐本地销售持久化、交易明细持久化、日账读取持久化销售仓库、按日期导出 CSV UI。
-5. 后续再评估 `.xlsx` 商品导入和正式 release APK 签名。
-## 2026-07-07 收银商品行 UI 更新
+1. 优先优化收银和商品编辑的关键词搜索体验，减少点击搜索到弹出结果之间的停顿。
+2. 在真机或模拟器上按 `product_editing_plan.md` 测试清单验收商品编辑、导入、回滚、收银明细 tab 返回和收银快照兼容性。
+3. GitHub 发布副本已随本次修复同步；后续继续以 `android-emergency-pos` 为主开发目录，`mobile_pos_publish` 只作为发布副本。
+4. 将新版 APK 上传到 Google Drive，需要保留旧版本时使用新文件名上传。
+5. 继续补齐本地销售持久化、交易明细持久化、日账读取持久化销售仓库、按日期导出 CSV UI。
+6. 后续再评估 `.xlsx` 商品导入和正式 release APK 签名。
+## 2026-07-07 搜索无卡顿优化验收完成
 
-- 收银页购物车商品行已改为紧凑布局：每行只显示商品名、条码、数量、单价、小计，以及右侧“操作 / Mas”按钮。
-- 原本每行下方的 `-`、`+`、改价、删除、折扣%、减价、撤回改动，已移动到右侧按钮打开的二级操作弹窗中。
-- 行内会用简短标记显示已改价、已优惠、促销状态，方便快速识别被调整过的商品。
-- 本次改动只影响 `CheckoutScreen` UI，不改变购物车、价格计算、优惠计算或销售记录后端逻辑。
-- 已验证：`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
-- 最新本地 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `876821 bytes`，构建时间 `2026-07-07 18:11:54`。
+- 已按 `修改方案/search_optimization_plan.md` 完成开发验收。
+- 后端搜索已建立预处理索引：新增 `ProductSearchEntry`，`InMemoryProductRepository` 维护 `searchEntries` / `searchEntryById`，在 `replaceAll()`、`upsert()`、`deleteById()` 时同步更新索引。
+- 搜索匹配继续支持大小写无关、重音符号无关、多关键词乱序、忽略常见西语连接词，且结果不再做固定 10 条上限。
+- 前端搜索已移出 UI 线程：新增 `SearchTaskRunner`，收银页和商品编辑页通过后台任务执行搜索，并使用 latest request 防护避免旧结果覆盖新结果。
+- 搜索结果 UI 已改为复用组件：新增 `ProductSearchResultAdapter` 和 `ProductSearchResultDialog`，使用 `ListView` 展示全部匹配结果，避免一次性创建大量按钮。
+- 收银页搜索结果点击后仍加入购物车；商品编辑页搜索结果点击后进入编辑页；未改变购物车、价格计算、促销计算或销售记录逻辑。
+- 验收已通过：`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
+- 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `889497 bytes`，构建时间 `2026-07-07 19:52:44`。

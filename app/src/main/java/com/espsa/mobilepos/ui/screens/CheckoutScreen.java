@@ -9,6 +9,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -16,6 +17,7 @@ import android.widget.Toast;
 
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ScanGateway;
+import com.espsa.mobilepos.app.SearchTaskRunner;
 import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CartLine;
 import com.espsa.mobilepos.core.checkout.ProductNotFoundException;
@@ -27,6 +29,7 @@ import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.CartPriceResult;
 import com.espsa.mobilepos.core.pricing.LinePriceResult;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.ProductSearchResultDialog;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
@@ -43,6 +46,7 @@ public final class CheckoutScreen {
     private LinearLayout cartContainer;
     private TextView totalText;
     private Spinner paymentSpinner;
+    private AlertDialog searchLoadingDialog;
 
     public CheckoutScreen(Context context, AppServices services, AppLanguage language, ScanGateway scanGateway, Runnable onSaleSaved) {
         this.context = context;
@@ -89,7 +93,7 @@ public final class CheckoutScreen {
         actions.addView(add, Views.weight(1));
 
         Button search = Views.button(context, UiText.choose(language, "搜索", "Buscar"));
-        search.setOnClickListener(v -> showSearchDialog(barcode.getText().toString()));
+        search.setOnClickListener(v -> handleSearchClick(barcode.getText().toString(), search));
         actions.addView(search, Views.weight(1));
 
         Button manual = Views.button(context, UiText.choose(language, "手动价格", "Precio manual"));
@@ -454,14 +458,56 @@ public final class CheckoutScreen {
                 .show();
     }
 
-    private void showSearchDialog(String query) {
+    private void handleSearchClick(String query, Button searchButton) {
         String trimmed = query == null ? "" : query.trim();
         if (trimmed.isEmpty()) {
             Toast.makeText(context, UiText.choose(language, "请输入商品关键词", "Escriba una palabra clave"), Toast.LENGTH_SHORT).show();
             return;
         }
 
-        List<Product> results = services.catalog().searchByName(trimmed);
+        showSearchLoading(searchButton);
+        services.searchTaskRunner().runLatest(
+                () -> services.catalog().searchByName(trimmed),
+                new SearchTaskRunner.SearchCallback<List<Product>>() {
+                    @Override
+                    public void onResult(List<Product> result) {
+                        hideSearchLoading(searchButton);
+                        showSearchResults(result);
+                    }
+
+                    @Override
+                    public void onError(RuntimeException error) {
+                        hideSearchLoading(searchButton);
+                        Toast.makeText(context, error.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                }
+        );
+    }
+
+    private void showSearchLoading(Button searchButton) {
+        searchButton.setEnabled(false);
+        LinearLayout panel = Views.horizontal(context);
+        panel.setPadding(dp(18), dp(12), dp(18), dp(12));
+        ProgressBar progress = new ProgressBar(context);
+        panel.addView(progress);
+        TextView label = Views.text(context, UiText.choose(language, "搜索中...", "Buscando..."), 16, StyleGuide.INK);
+        label.setPadding(dp(12), 0, 0, 0);
+        panel.addView(label, Views.weight(1));
+        searchLoadingDialog = new AlertDialog.Builder(context)
+                .setView(panel)
+                .setCancelable(false)
+                .show();
+    }
+
+    private void hideSearchLoading(Button searchButton) {
+        searchButton.setEnabled(true);
+        if (searchLoadingDialog != null && searchLoadingDialog.isShowing()) {
+            searchLoadingDialog.dismiss();
+        }
+        searchLoadingDialog = null;
+    }
+
+    private void showSearchResults(List<Product> results) {
         if (results.isEmpty()) {
             new AlertDialog.Builder(context)
                     .setTitle(UiText.choose(language, "搜索结果", "Resultado"))
@@ -470,36 +516,12 @@ public final class CheckoutScreen {
                     .show();
             return;
         }
+        ProductSearchResultDialog.show(context, language, results, this::addSearchResultToCart);
+    }
 
-        LinearLayout list = Views.vertical(context);
-        list.setPadding(8, 8, 8, 8);
-        final AlertDialog[] dialogRef = new AlertDialog[1];
-        for (Product product : results) {
-            Button item = Views.button(context, product.name() + "\n" + product.barcode() + "  $" + product.salePrice().amount());
-            item.setGravity(Gravity.CENTER_VERTICAL);
-            item.setOnClickListener(v -> {
-                cart.addProduct(product, 1);
-                refreshCart();
-                if (dialogRef[0] != null) {
-                    dialogRef[0].dismiss();
-                }
-            });
-            list.addView(item, Views.matchWrap());
-        }
-
-        ScrollView scroll = new ScrollView(context);
-        scroll.addView(list);
-        scroll.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                Math.min(760, Math.max(360, results.size() * 104))
-        ));
-
-        String title = UiText.choose(language, "选择商品", "Elegir producto") + " (" + results.size() + ")";
-        dialogRef[0] = new AlertDialog.Builder(context)
-                .setTitle(title)
-                .setView(scroll)
-                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
-                .show();
+    private void addSearchResultToCart(Product product) {
+        cart.addProduct(product, 1);
+        refreshCart();
     }
 
     private void checkout() {

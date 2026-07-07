@@ -15,7 +15,9 @@ import java.util.Optional;
 public final class InMemoryProductRepository implements ProductRepository {
     private final Map<String, Product> byId = new HashMap<String, Product>();
     private final Map<String, Product> byBarcode = new HashMap<String, Product>();
+    private final Map<String, ProductSearchEntry> searchEntryById = new HashMap<String, ProductSearchEntry>();
     private final List<Product> products = new ArrayList<Product>();
+    private final List<ProductSearchEntry> searchEntries = new ArrayList<ProductSearchEntry>();
 
     @Override
     public List<Product> all() {
@@ -49,10 +51,10 @@ public final class InMemoryProductRepository implements ProductRepository {
         }
         String[] keywords = keywordsForQuery(normalizedQuery);
         List<SearchHit> hits = new ArrayList<SearchHit>();
-        for (Product product : products) {
-            int score = scoreProduct(product, normalizedQuery, keywords);
+        for (ProductSearchEntry entry : searchEntries) {
+            int score = scoreEntry(entry, normalizedQuery, keywords);
             if (score >= 0) {
-                hits.add(new SearchHit(product, score));
+                hits.add(new SearchHit(entry.product(), score));
             }
         }
         Collections.sort(hits, new Comparator<SearchHit>() {
@@ -78,41 +80,36 @@ public final class InMemoryProductRepository implements ProductRepository {
         return results;
     }
 
-    private int scoreProduct(Product product, String normalizedQuery, String[] keywords) {
-        String name = normalizeSearchText(product.name());
-        String barcode = normalizeSearchText(product.barcode());
-        String category = normalizeSearchText(product.category());
-        String unitName = normalizeSearchText(product.unitName());
-        String searchable = name + " " + barcode + " " + category + " " + unitName;
+    private int scoreEntry(ProductSearchEntry entry, String normalizedQuery, String[] keywords) {
         for (String keyword : keywords) {
-            if (!keyword.isEmpty() && !searchable.contains(keyword)) {
+            if (!keyword.isEmpty() && !entry.searchable().contains(keyword)) {
                 return -1;
             }
         }
         int score = 100;
-        if (barcode.equals(normalizedQuery)) {
+        if (entry.normalizedBarcode().equals(normalizedQuery)) {
             score += 20000;
         }
-        if (name.equals(normalizedQuery)) {
+        if (entry.normalizedName().equals(normalizedQuery)) {
             score += 10000;
-        } else if (name.startsWith(normalizedQuery)) {
+        } else if (entry.normalizedName().startsWith(normalizedQuery)) {
             score += 9000;
-        } else if (tokenStartsWith(name, normalizedQuery)) {
+        } else if (tokenStartsWith(entry.nameTokens(), normalizedQuery)) {
             score += 7500;
-        } else if (name.contains(normalizedQuery)) {
+        } else if (entry.normalizedName().contains(normalizedQuery)) {
             score += 6500;
         }
         for (String keyword : keywords) {
             if (keyword.isEmpty()) {
                 continue;
             }
-            if (tokenEquals(name, keyword)) {
+            if (tokenEquals(entry.nameTokens(), keyword)) {
                 score += 600;
-            } else if (tokenStartsWith(name, keyword)) {
+            } else if (tokenStartsWith(entry.nameTokens(), keyword)) {
                 score += 350;
-            } else if (name.contains(keyword)) {
+            } else if (entry.normalizedName().contains(keyword)) {
                 score += 200;
-            } else if (category.contains(keyword)) {
+            } else if (entry.normalizedCategory().contains(keyword)) {
                 score += 50;
             }
         }
@@ -120,7 +117,7 @@ public final class InMemoryProductRepository implements ProductRepository {
     }
 
     private String[] keywordsForQuery(String normalizedQuery) {
-        String[] rawKeywords = normalizedQuery.split("\\s+");
+        String[] rawKeywords = tokenize(normalizedQuery);
         List<String> meaningfulKeywords = new ArrayList<String>();
         for (String keyword : rawKeywords) {
             if (!keyword.isEmpty() && !isSearchStopWord(keyword)) {
@@ -142,8 +139,7 @@ public final class InMemoryProductRepository implements ProductRepository {
                 || "las".equals(keyword);
     }
 
-    private boolean tokenEquals(String text, String keyword) {
-        String[] tokens = text.split("\\s+");
+    private boolean tokenEquals(String[] tokens, String keyword) {
         for (String token : tokens) {
             if (token.equals(keyword)) {
                 return true;
@@ -152,8 +148,7 @@ public final class InMemoryProductRepository implements ProductRepository {
         return false;
     }
 
-    private boolean tokenStartsWith(String text, String keyword) {
-        String[] tokens = text.split("\\s+");
+    private boolean tokenStartsWith(String[] tokens, String keyword) {
         for (String token : tokens) {
             if (token.startsWith(keyword)) {
                 return true;
@@ -171,11 +166,16 @@ public final class InMemoryProductRepository implements ProductRepository {
         return noAccents.replaceAll("[^0-9a-z]+", " ").trim().replaceAll("\\s+", " ");
     }
 
+    private String[] tokenize(String normalizedText) {
+        if (normalizedText == null || normalizedText.isEmpty()) {
+            return new String[0];
+        }
+        return normalizedText.split("\\s+");
+    }
+
     @Override
     public void replaceAll(List<Product> newProducts) {
-        byId.clear();
-        byBarcode.clear();
-        products.clear();
+        clearIndexes();
         if (newProducts == null) {
             return;
         }
@@ -250,6 +250,9 @@ public final class InMemoryProductRepository implements ProductRepository {
         if (!product.barcode().isEmpty()) {
             byBarcode.put(product.barcode(), product);
         }
+        ProductSearchEntry entry = buildSearchEntry(product);
+        searchEntryById.put(product.id(), entry);
+        searchEntries.add(entry);
     }
 
     private void removeIndexes(Product product) {
@@ -257,6 +260,37 @@ public final class InMemoryProductRepository implements ProductRepository {
         if (!product.barcode().isEmpty()) {
             byBarcode.remove(product.barcode());
         }
+        searchEntryById.remove(product.id());
+        removeSearchEntry(product.id());
+    }
+
+    private void clearIndexes() {
+        byId.clear();
+        byBarcode.clear();
+        searchEntryById.clear();
+        products.clear();
+        searchEntries.clear();
+    }
+
+    private void removeSearchEntry(String productId) {
+        for (int i = 0; i < searchEntries.size(); i++) {
+            if (searchEntries.get(i).product().id().equals(productId)) {
+                searchEntries.remove(i);
+                return;
+            }
+        }
+    }
+
+    private ProductSearchEntry buildSearchEntry(Product product) {
+        String normalizedName = normalizeSearchText(product.name());
+        return new ProductSearchEntry(
+                product,
+                normalizedName,
+                normalizeSearchText(product.barcode()),
+                normalizeSearchText(product.category()),
+                normalizeSearchText(product.unitName()),
+                tokenize(normalizedName)
+        );
     }
 
     private boolean sameId(Product product, String productId) {

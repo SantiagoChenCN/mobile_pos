@@ -34,6 +34,7 @@ public final class AppServices {
     private final ProductLibraryService productLibrary;
     private final UserPreferencesStore preferencesStore;
     private final AndroidFileNameResolver fileNameResolver;
+    private final SearchTaskRunner searchTaskRunner;
     private String lastImportMessage = "";
     private Cart currentCart;
 
@@ -47,7 +48,8 @@ public final class AppServices {
             ProductEditingService productEditing,
             ProductLibraryService productLibrary,
             UserPreferencesStore preferencesStore,
-            AndroidFileNameResolver fileNameResolver
+            AndroidFileNameResolver fileNameResolver,
+            SearchTaskRunner searchTaskRunner
     ) {
         this.catalog = catalog;
         this.checkout = checkout;
@@ -59,6 +61,7 @@ public final class AppServices {
         this.productLibrary = productLibrary;
         this.preferencesStore = preferencesStore;
         this.fileNameResolver = fileNameResolver;
+        this.searchTaskRunner = searchTaskRunner;
         this.currentCart = checkout.startCart();
     }
 
@@ -85,7 +88,8 @@ public final class AppServices {
                 productEditing,
                 productLibrary,
                 new UserPreferencesStore(),
-                new AndroidFileNameResolver()
+                new AndroidFileNameResolver(),
+                new SearchTaskRunner()
         );
     }
 
@@ -111,7 +115,8 @@ public final class AppServices {
                 productEditing,
                 productLibrary,
                 new UserPreferencesStore(),
-                new AndroidFileNameResolver()
+                new AndroidFileNameResolver(),
+                new SearchTaskRunner()
         );
     }
 
@@ -161,6 +166,10 @@ public final class AppServices {
 
     public UserPreferencesStore preferencesStore() {
         return preferencesStore;
+    }
+
+    public SearchTaskRunner searchTaskRunner() {
+        return searchTaskRunner;
     }
 
     public Cart currentCart() {

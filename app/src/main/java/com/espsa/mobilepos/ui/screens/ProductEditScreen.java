@@ -3,20 +3,21 @@ package com.espsa.mobilepos.ui.screens;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.text.InputType;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ScanGateway;
+import com.espsa.mobilepos.app.SearchTaskRunner;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.ProductSearchResultDialog;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
@@ -31,6 +32,7 @@ public final class ProductEditScreen {
     private final ScanGateway scanGateway;
     private FrameLayout content;
     private ProductFormScreen activeForm;
+    private AlertDialog searchLoadingDialog;
 
     public ProductEditScreen(Context context, AppServices services, AppLanguage language, ScanGateway scanGateway) {
         this.context = context;
@@ -115,7 +117,7 @@ public final class ProductEditScreen {
         panel.addView(keyword, Views.matchWrap());
 
         Button search = Views.button(context, UiText.choose(language, "搜索商品", "Buscar producto"));
-        search.setOnClickListener(v -> searchKeyword(clean(keyword.getText().toString())));
+        search.setOnClickListener(v -> handleKeywordSearch(clean(keyword.getText().toString()), search));
         panel.addView(search, Views.matchWrap());
         return panel;
     }
@@ -133,12 +135,54 @@ public final class ProductEditScreen {
         }
     }
 
-    private void searchKeyword(String query) {
+    private void handleKeywordSearch(String query, Button searchButton) {
         if (query.isEmpty()) {
             Toast.makeText(context, UiText.choose(language, "请输入商品关键词", "Escriba una palabra clave"), Toast.LENGTH_SHORT).show();
             return;
         }
-        List<Product> results = services.productEditing().searchByKeyword(query);
+        showKeywordSearchLoading(searchButton);
+        services.searchTaskRunner().runLatest(
+                () -> services.productEditing().searchByKeyword(query),
+                new SearchTaskRunner.SearchCallback<List<Product>>() {
+                    @Override
+                    public void onResult(List<Product> result) {
+                        hideKeywordSearchLoading(searchButton);
+                        showKeywordSearchResults(result);
+                    }
+
+                    @Override
+                    public void onError(RuntimeException error) {
+                        hideKeywordSearchLoading(searchButton);
+                        Toast.makeText(context, error.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                }
+        );
+    }
+
+    private void showKeywordSearchLoading(Button searchButton) {
+        searchButton.setEnabled(false);
+        LinearLayout panel = Views.horizontal(context);
+        panel.setPadding(dp(18), dp(12), dp(18), dp(12));
+        ProgressBar progress = new ProgressBar(context);
+        panel.addView(progress);
+        TextView label = Views.text(context, UiText.choose(language, "搜索中...", "Buscando..."), 16, StyleGuide.INK);
+        label.setPadding(dp(12), 0, 0, 0);
+        panel.addView(label, Views.weight(1));
+        searchLoadingDialog = new AlertDialog.Builder(context)
+                .setView(panel)
+                .setCancelable(false)
+                .show();
+    }
+
+    private void hideKeywordSearchLoading(Button searchButton) {
+        searchButton.setEnabled(true);
+        if (searchLoadingDialog != null && searchLoadingDialog.isShowing()) {
+            searchLoadingDialog.dismiss();
+        }
+        searchLoadingDialog = null;
+    }
+
+    private void showKeywordSearchResults(List<Product> results) {
         if (results.isEmpty()) {
             new AlertDialog.Builder(context)
                     .setTitle(UiText.choose(language, "搜索结果", "Resultado"))
@@ -151,39 +195,11 @@ public final class ProductEditScreen {
             openEdit(results.get(0));
             return;
         }
-        showMultipleResults(results);
+        ProductSearchResultDialog.show(context, language, results, this::openEdit);
     }
 
-    private void showMultipleResults(List<Product> products) {
-        LinearLayout list = Views.vertical(context);
-        list.setPadding(8, 8, 8, 8);
-        final AlertDialog[] dialogRef = new AlertDialog[1];
-        for (Product product : products) {
-            Button item = Views.button(context, product.name()
-                    + "\n" + product.barcode()
-                    + "  $" + product.salePrice().amount()
-                    + "  " + product.category()
-                    + "  " + product.unitName());
-            item.setGravity(Gravity.CENTER_VERTICAL);
-            item.setOnClickListener(v -> {
-                if (dialogRef[0] != null) {
-                    dialogRef[0].dismiss();
-                }
-                openEdit(product);
-            });
-            list.addView(item, Views.matchWrap());
-        }
-        ScrollView scroll = new ScrollView(context);
-        scroll.addView(list);
-        scroll.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                Math.min(760, Math.max(360, products.size() * 112))
-        ));
-        dialogRef[0] = new AlertDialog.Builder(context)
-                .setTitle(UiText.choose(language, "选择商品", "Elegir producto") + " (" + products.size() + ")")
-                .setView(scroll)
-                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
-                .show();
+    private int dp(int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     private void openCreate(String barcode) {

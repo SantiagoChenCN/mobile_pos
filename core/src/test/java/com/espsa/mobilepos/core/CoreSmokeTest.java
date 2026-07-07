@@ -58,6 +58,8 @@ public final class CoreSmokeTest {
         assertTrue("huevo search includes maple item", containsProductName(huevoResults, "Huevo Blanco Maple"));
         assertTrue("multi-word keyword search matches words in any order", productRepository.searchByName("maple huevo", Integer.MAX_VALUE).size() == 1);
         assertTrue("multi-word search ignores common connector words", productRepository.searchByName("maple de huevo", Integer.MAX_VALUE).size() == 1);
+        assertTrue("barcode exact match sorts first", "Huevo Blanco Maple".equals(productRepository.searchByName("7790000000003", Integer.MAX_VALUE).get(0).name()));
+        runSearchIndexUpdateChecks(productRepository);
         runProductEditingChecks(productRepository);
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
@@ -152,6 +154,20 @@ public final class CoreSmokeTest {
 
         assertTrue("delete removes product", editing.deleteProduct(created.product().id()).success());
         assertTrue("deleted product not indexed", !editing.findByBarcode("002").isPresent());
+    }
+
+    private static void runSearchIndexUpdateChecks(InMemoryProductRepository productRepository) {
+        Product indexed = new Product("index-1", "00991", "Cafe Molido", "almacen", "un", Money.of(2500), null, 0, false);
+        productRepository.upsert(indexed);
+        assertTrue("upserted product is searchable", containsProductName(productRepository.searchByName("cafe molido", Integer.MAX_VALUE), "Cafe Molido"));
+
+        Product renamed = new Product("index-1", "00991", "Te Negro", "almacen", "un", Money.of(2600), null, 0, false);
+        productRepository.upsert(renamed);
+        assertTrue("old name no longer matches after upsert", !containsProductName(productRepository.searchByName("cafe molido", Integer.MAX_VALUE), "Cafe Molido"));
+        assertTrue("new name matches after upsert", containsProductName(productRepository.searchByName("te negro", Integer.MAX_VALUE), "Te Negro"));
+
+        productRepository.deleteById("index-1");
+        assertTrue("deleted product is removed from search index", productRepository.searchByName("te negro", Integer.MAX_VALUE).isEmpty());
     }
 
     private static void assertAmount(String label, long expected, Money actual) {
