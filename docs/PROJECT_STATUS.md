@@ -143,3 +143,15 @@
 - 收银页搜索结果点击后仍加入购物车；商品编辑页搜索结果点击后进入编辑页；未改变购物车、价格计算、促销计算或销售记录逻辑。
 - 验收已通过：`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
 - 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `889497 bytes`，构建时间 `2026-07-07 19:52:44`。
+## 2026-07-08 UI/收银/字体适配验收完成
+
+- 已按 `修改方案/ui_checkout_search_font_improvement_plan.md` 完成并验收本轮 UI、收银找零、搜索交互改进。
+- 已按 `修改方案/text_scale_ui_controls_fix_plan.md` 完成并验收字体大小适配遗漏修复。
+- 已实现离开页面/页面重绘时取消 pending 搜索回调，避免旧页面搜索结果在新页面弹出。
+- 已实现回车/IME 搜索动作：收银页输入关键词回车可搜索；商品编辑页关键词回车可搜索；商品编辑页条码输入框回车仍执行条码查找/新建。
+- 已实现现金结账找零弹窗：现金支付时输入客户付款金额，金额不足不保存销售，金额足够显示找零并确认保存；非现金支付流程保持原逻辑。
+- 已实现字体大小设置：设置页支持小、标准、大、特大，并持久化到偏好设置；主要文本、按钮、输入框、支付方式下拉框、商品表单下拉框统一跟随字体档位缩放。
+- 已补齐统一 UI helper：`Views.editText(...)`、`Views.spinnerAdapter(...)`、`KeyboardActions`、`CashPaymentDialog`、`TextScale`。
+- 已新增 `CashChangeCalculator` / `CashChangeResult` 并在 `CoreSmokeTest` 覆盖现金找零边界。
+- 验收已通过：页面类中不再散落未缩放的 `new EditText(...)` 或默认 `ArrayAdapter`；`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
+- 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `904393 bytes`，构建时间 `2026-07-08 01:18:20`。

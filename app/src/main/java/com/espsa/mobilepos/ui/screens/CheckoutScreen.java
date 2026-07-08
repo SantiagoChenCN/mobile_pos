@@ -5,11 +5,9 @@ import android.content.Context;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -18,6 +16,7 @@ import android.widget.Toast;
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ScanGateway;
 import com.espsa.mobilepos.app.SearchTaskRunner;
+import com.espsa.mobilepos.core.checkout.CashChangeCalculator;
 import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CartLine;
 import com.espsa.mobilepos.core.checkout.ProductNotFoundException;
@@ -29,6 +28,8 @@ import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.CartPriceResult;
 import com.espsa.mobilepos.core.pricing.LinePriceResult;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.CashPaymentDialog;
+import com.espsa.mobilepos.ui.KeyboardActions;
 import com.espsa.mobilepos.ui.ProductSearchResultDialog;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
@@ -42,11 +43,11 @@ public final class CheckoutScreen {
     private final AppLanguage language;
     private final ScanGateway scanGateway;
     private final Runnable onSaleSaved;
+    private final CashChangeCalculator cashChangeCalculator = new CashChangeCalculator();
     private Cart cart;
     private LinearLayout cartContainer;
     private TextView totalText;
     private Spinner paymentSpinner;
-    private AlertDialog searchLoadingDialog;
 
     public CheckoutScreen(Context context, AppServices services, AppLanguage language, ScanGateway scanGateway, Runnable onSaleSaved) {
         this.context = context;
@@ -81,7 +82,7 @@ public final class CheckoutScreen {
         LinearLayout panel = Views.vertical(context);
         panel.setPadding(0, 12, 0, 8);
 
-        EditText barcode = new EditText(context);
+        EditText barcode = Views.editText(context);
         barcode.setHint(UiText.choose(language, "扫条码或输入条码", "Escanear o escribir codigo"));
         barcode.setSingleLine(true);
         barcode.setInputType(InputType.TYPE_CLASS_TEXT);
@@ -95,6 +96,7 @@ public final class CheckoutScreen {
         Button search = Views.button(context, UiText.choose(language, "搜索", "Buscar"));
         search.setOnClickListener(v -> handleSearchClick(barcode.getText().toString(), search));
         actions.addView(search, Views.weight(1));
+        KeyboardActions.bindSearchAction(barcode, () -> handleSearchClick(barcode.getText().toString(), search));
 
         Button manual = Views.button(context, UiText.choose(language, "手动价格", "Precio manual"));
         manual.setOnClickListener(v -> showManualPriceDialog());
@@ -147,15 +149,11 @@ public final class CheckoutScreen {
         panel.addView(discountRow, Views.matchWrap());
 
         paymentSpinner = new Spinner(context);
-        paymentSpinner.setAdapter(new ArrayAdapter<String>(
-                context,
-                android.R.layout.simple_spinner_dropdown_item,
-                paymentLabels()
-        ));
+        paymentSpinner.setAdapter(Views.spinnerAdapter(context, paymentLabels()));
         panel.addView(paymentSpinner, Views.matchWrap());
 
         Button checkout = Views.button(context, UiText.choose(language, "结账保存", "Guardar venta"));
-        checkout.setTextSize(20);
+        checkout.setTextSize(StyleGuide.scaledSp(20));
         checkout.setOnClickListener(v -> checkout());
         panel.addView(checkout, Views.matchWrap());
         return panel;
@@ -247,7 +245,7 @@ public final class CheckoutScreen {
         row.addView(details, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
         Button menu = Views.button(context, UiText.choose(language, "操作", "Mas"));
-        menu.setTextSize(14);
+        menu.setTextSize(StyleGuide.scaledSp(14));
         menu.setMinWidth(dp(72));
         menu.setOnClickListener(v -> showLineActionMenu(linePrice));
         row.addView(menu, new LinearLayout.LayoutParams(dp(82), LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -357,7 +355,7 @@ public final class CheckoutScreen {
     }
 
     private void showManualPriceDialog() {
-        EditText price = new EditText(context);
+        EditText price = Views.editText(context);
         price.setInputType(InputType.TYPE_CLASS_NUMBER);
         price.setHint("0");
         new AlertDialog.Builder(context)
@@ -375,7 +373,7 @@ public final class CheckoutScreen {
     }
 
     private void showLinePriceDialog(CartLine line) {
-        EditText price = new EditText(context);
+        EditText price = Views.editText(context);
         price.setInputType(InputType.TYPE_CLASS_NUMBER);
         price.setHint(Long.toString(line.product().salePrice().amount()));
         new AlertDialog.Builder(context)
@@ -425,7 +423,7 @@ public final class CheckoutScreen {
     }
 
     private void showPercentDialog(String title, PercentCallback callback) {
-        EditText input = new EditText(context);
+        EditText input = Views.editText(context);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         input.setHint("10");
         new AlertDialog.Builder(context)
@@ -442,7 +440,7 @@ public final class CheckoutScreen {
     }
 
     private void showAmountDialog(String title, AmountCallback callback) {
-        EditText input = new EditText(context);
+        EditText input = Views.editText(context);
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setHint("100");
         new AlertDialog.Builder(context)
@@ -486,25 +484,13 @@ public final class CheckoutScreen {
 
     private void showSearchLoading(Button searchButton) {
         searchButton.setEnabled(false);
-        LinearLayout panel = Views.horizontal(context);
-        panel.setPadding(dp(18), dp(12), dp(18), dp(12));
-        ProgressBar progress = new ProgressBar(context);
-        panel.addView(progress);
-        TextView label = Views.text(context, UiText.choose(language, "搜索中...", "Buscando..."), 16, StyleGuide.INK);
-        label.setPadding(dp(12), 0, 0, 0);
-        panel.addView(label, Views.weight(1));
-        searchLoadingDialog = new AlertDialog.Builder(context)
-                .setView(panel)
-                .setCancelable(false)
-                .show();
+        searchButton.setText(UiText.choose(language, "搜索中...", "Buscando..."));
+        Toast.makeText(context, UiText.choose(language, "搜索中...", "Buscando..."), Toast.LENGTH_SHORT).show();
     }
 
     private void hideSearchLoading(Button searchButton) {
         searchButton.setEnabled(true);
-        if (searchLoadingDialog != null && searchLoadingDialog.isShowing()) {
-            searchLoadingDialog.dismiss();
-        }
-        searchLoadingDialog = null;
+        searchButton.setText(UiText.choose(language, "搜索", "Buscar"));
     }
 
     private void showSearchResults(List<Product> results) {
@@ -525,8 +511,28 @@ public final class CheckoutScreen {
     }
 
     private void checkout() {
+        PaymentMethod paymentMethod = selectedPaymentMethod();
+        if (paymentMethod == PaymentMethod.CASH) {
+            showCashPaymentDialog();
+            return;
+        }
+        completeCheckout(paymentMethod);
+    }
+
+    private void showCashPaymentDialog() {
+        CartPriceResult price = services.checkout().preview(cart);
+        CashPaymentDialog.show(
+                context,
+                language,
+                price.total(),
+                cashChangeCalculator,
+                result -> completeCheckout(PaymentMethod.CASH)
+        );
+    }
+
+    private void completeCheckout(PaymentMethod paymentMethod) {
         try {
-            Sale sale = services.checkout().checkout(cart, selectedPaymentMethod());
+            Sale sale = services.checkout().checkout(cart, paymentMethod);
             Toast.makeText(context, UiText.choose(language, "已保存：", "Guardado: ") + sale.id(), Toast.LENGTH_LONG).show();
             cart = services.resetCart();
             refreshCart();

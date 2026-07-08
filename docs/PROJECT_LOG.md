@@ -71,3 +71,30 @@
   - 新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
   - APK 大小：`889497 bytes`。
   - 构建时间：`2026-07-07 19:52:44`。
+## 2026-07-08
+
+### UI/收银/字体适配改进验收完成
+
+- 依据：
+  - `修改方案/ui_checkout_search_font_improvement_plan.md`
+  - `修改方案/text_scale_ui_controls_fix_plan.md`
+- 搜索交互：
+  - 页面切换/重绘时统一取消 pending 搜索回调，避免旧搜索结果弹到新页面。
+  - 收银页输入框支持回车触发关键词搜索。
+  - 商品编辑页关键词输入框支持回车搜索；条码输入框回车仍走条码查找/新建。
+- 现金结账：
+  - 新增 core 层 `CashChangeCalculator` / `CashChangeResult`。
+  - 新增 `CashPaymentDialog`，现金支付时先输入客户付款金额，金额不足不保存，金额足够显示找零并确认结账。
+  - 非现金支付流程不变。
+- 字体大小：
+  - 新增 `TextScale` 档位和偏好保存/读取。
+  - `StyleGuide` / `Views` 统一控制文本、按钮、输入框、下拉框字体缩放。
+  - 设置页支持小、标准、大、特大，切换后重新渲染并持久化。
+  - 补齐 `EditText` 与 `Spinner` 字号适配遗漏，商品表单、收银输入框、现金付款输入框、支付方式下拉框均跟随字体档位变化。
+- 验收：
+  - `rg -n "new EditText\(|new Spinner\(|new ArrayAdapter" android-emergency-pos\app\src\main\java\com\espsa\mobilepos` 检查通过；页面中直接 `Spinner` 创建仅保留控件本体，adapter 已统一走 `Views.spinnerAdapter(...)`。
+  - `CoreSmokeTest` 通过。
+  - 完整 debug APK Gradle 构建成功。
+  - 新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
+  - APK 大小：`904393 bytes`。
+  - 构建时间：`2026-07-08 01:18:20`。

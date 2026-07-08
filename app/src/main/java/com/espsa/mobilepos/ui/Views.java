@@ -3,9 +3,15 @@ package com.espsa.mobilepos.ui;
 import android.content.Context;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import java.util.Arrays;
+import java.util.List;
 
 public final class Views {
     private Views() {
@@ -27,7 +33,7 @@ public final class Views {
     public static TextView text(Context context, String value, int sizeSp, int color) {
         TextView text = new TextView(context);
         text.setText(value);
-        text.setTextSize(sizeSp);
+        text.setTextSize(StyleGuide.scaledSp(sizeSp));
         text.setTextColor(color);
         text.setGravity(Gravity.CENTER_VERTICAL);
         return text;
@@ -36,9 +42,44 @@ public final class Views {
     public static Button button(Context context, String label) {
         Button button = new Button(context);
         button.setText(label);
+        button.setTextSize(StyleGuide.scaledSp(16));
         button.setAllCaps(false);
         button.setMinHeight(48);
         return button;
+    }
+
+    public static EditText editText(Context context) {
+        EditText input = new EditText(context);
+        input.setTextSize(StyleGuide.scaledSp(16));
+        return input;
+    }
+
+    public static ArrayAdapter<String> spinnerAdapter(Context context, String[] labels) {
+        return spinnerAdapter(context, Arrays.asList(labels));
+    }
+
+    public static ArrayAdapter<String> spinnerAdapter(Context context, List<String> labels) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                context,
+                android.R.layout.simple_spinner_item,
+                labels
+        ) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                TextView view = (TextView) super.getView(position, convertView, parent);
+                view.setTextSize(StyleGuide.scaledSp(16));
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                TextView view = (TextView) super.getDropDownView(position, convertView, parent);
+                view.setTextSize(StyleGuide.scaledSp(16));
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        return adapter;
     }
 
     public static LinearLayout.LayoutParams matchWrap() {
@@ -56,4 +97,3 @@ public final class Views {
         return divider;
     }
 }
-

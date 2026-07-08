@@ -14,25 +14,38 @@ public final class StyleGuide {
     public static final int RED = Color.rgb(185, 28, 28);
     public static final int AMBER = Color.rgb(180, 83, 9);
     public static final int MUTED = Color.rgb(75, 85, 99);
+    private static TextScale textScale = TextScale.NORMAL;
 
     private StyleGuide() {
     }
 
+    public static void setTextScale(TextScale scale) {
+        textScale = scale == null ? TextScale.NORMAL : scale;
+    }
+
+    public static TextScale textScale() {
+        return textScale;
+    }
+
+    public static float scaledSp(float baseSp) {
+        return baseSp * textScale.multiplier();
+    }
+
     public static void pageTitle(TextView view) {
         view.setTextColor(INK);
-        view.setTextSize(24);
+        view.setTextSize(scaledSp(24));
         view.setTypeface(Typeface.DEFAULT_BOLD);
     }
 
     public static void total(TextView view) {
         view.setTextColor(INK);
-        view.setTextSize(34);
+        view.setTextSize(scaledSp(34));
         view.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
     }
 
     public static void label(TextView view) {
         view.setTextColor(MUTED);
-        view.setTextSize(13);
+        view.setTextSize(scaledSp(13));
     }
 
     public static void card(View view) {
@@ -40,4 +53,3 @@ public final class StyleGuide {
         view.setPadding(18, 16, 18, 16);
     }
 }
-

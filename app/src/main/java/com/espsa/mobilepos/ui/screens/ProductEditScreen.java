@@ -8,7 +8,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,6 +16,7 @@ import com.espsa.mobilepos.app.ScanGateway;
 import com.espsa.mobilepos.app.SearchTaskRunner;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.KeyboardActions;
 import com.espsa.mobilepos.ui.ProductSearchResultDialog;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
@@ -32,7 +32,6 @@ public final class ProductEditScreen {
     private final ScanGateway scanGateway;
     private FrameLayout content;
     private ProductFormScreen activeForm;
-    private AlertDialog searchLoadingDialog;
 
     public ProductEditScreen(Context context, AppServices services, AppLanguage language, ScanGateway scanGateway) {
         this.context = context;
@@ -88,7 +87,7 @@ public final class ProductEditScreen {
         LinearLayout panel = Views.vertical(context);
         panel.setPadding(0, 12, 0, 14);
 
-        EditText barcode = new EditText(context);
+        EditText barcode = Views.editText(context);
         barcode.setHint(UiText.choose(language, "条码或短码，例如 001", "Codigo o codigo corto"));
         barcode.setSingleLine(true);
         barcode.setInputType(InputType.TYPE_CLASS_NUMBER);
@@ -98,6 +97,7 @@ public final class ProductEditScreen {
         Button lookup = Views.button(context, UiText.choose(language, "查找 / 新建", "Buscar / crear"));
         lookup.setOnClickListener(v -> lookupBarcode(clean(barcode.getText().toString())));
         actions.addView(lookup, Views.weight(1));
+        KeyboardActions.bindDoneAction(barcode, () -> lookupBarcode(clean(barcode.getText().toString())));
 
         Button scan = Views.button(context, UiText.choose(language, "扫码", "Camara"));
         scan.setOnClickListener(v -> scanGateway.requestBarcodeScan());
@@ -110,7 +110,7 @@ public final class ProductEditScreen {
         LinearLayout panel = Views.vertical(context);
         panel.setPadding(0, 14, 0, 0);
 
-        EditText keyword = new EditText(context);
+        EditText keyword = Views.editText(context);
         keyword.setHint(UiText.choose(language, "商品名关键词", "Palabra clave"));
         keyword.setSingleLine(true);
         keyword.setInputType(InputType.TYPE_CLASS_TEXT);
@@ -119,6 +119,7 @@ public final class ProductEditScreen {
         Button search = Views.button(context, UiText.choose(language, "搜索商品", "Buscar producto"));
         search.setOnClickListener(v -> handleKeywordSearch(clean(keyword.getText().toString()), search));
         panel.addView(search, Views.matchWrap());
+        KeyboardActions.bindSearchAction(keyword, () -> handleKeywordSearch(clean(keyword.getText().toString()), search));
         return panel;
     }
 
@@ -161,25 +162,13 @@ public final class ProductEditScreen {
 
     private void showKeywordSearchLoading(Button searchButton) {
         searchButton.setEnabled(false);
-        LinearLayout panel = Views.horizontal(context);
-        panel.setPadding(dp(18), dp(12), dp(18), dp(12));
-        ProgressBar progress = new ProgressBar(context);
-        panel.addView(progress);
-        TextView label = Views.text(context, UiText.choose(language, "搜索中...", "Buscando..."), 16, StyleGuide.INK);
-        label.setPadding(dp(12), 0, 0, 0);
-        panel.addView(label, Views.weight(1));
-        searchLoadingDialog = new AlertDialog.Builder(context)
-                .setView(panel)
-                .setCancelable(false)
-                .show();
+        searchButton.setText(UiText.choose(language, "搜索中...", "Buscando..."));
+        Toast.makeText(context, UiText.choose(language, "搜索中...", "Buscando..."), Toast.LENGTH_SHORT).show();
     }
 
     private void hideKeywordSearchLoading(Button searchButton) {
         searchButton.setEnabled(true);
-        if (searchLoadingDialog != null && searchLoadingDialog.isShowing()) {
-            searchLoadingDialog.dismiss();
-        }
-        searchLoadingDialog = null;
+        searchButton.setText(UiText.choose(language, "搜索商品", "Buscar producto"));
     }
 
     private void showKeywordSearchResults(List<Product> results) {
@@ -196,10 +185,6 @@ public final class ProductEditScreen {
             return;
         }
         ProductSearchResultDialog.show(context, language, results, this::openEdit);
-    }
-
-    private int dp(int value) {
-        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     private void openCreate(String barcode) {

@@ -1,6 +1,8 @@
 package com.espsa.mobilepos.core;
 
 import com.espsa.mobilepos.core.catalog.InMemoryProductRepository;
+import com.espsa.mobilepos.core.checkout.CashChangeCalculator;
+import com.espsa.mobilepos.core.checkout.CashChangeResult;
 import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CartLine;
 import com.espsa.mobilepos.core.checkout.CheckoutService;
@@ -61,6 +63,7 @@ public final class CoreSmokeTest {
         assertTrue("barcode exact match sorts first", "Huevo Blanco Maple".equals(productRepository.searchByName("7790000000003", Integer.MAX_VALUE).get(0).name()));
         runSearchIndexUpdateChecks(productRepository);
         runProductEditingChecks(productRepository);
+        runCashChangeChecks();
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
         CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
@@ -170,6 +173,34 @@ public final class CoreSmokeTest {
         assertTrue("deleted product is removed from search index", productRepository.searchByName("te negro", Integer.MAX_VALUE).isEmpty());
     }
 
+    private static void runCashChangeChecks() {
+        CashChangeCalculator calculator = new CashChangeCalculator();
+        CashChangeResult exact = calculator.calculate(Money.of(1000), Money.of(1000));
+        assertAmount("cash change exact payment", 0, exact.change());
+
+        CashChangeResult overpaid = calculator.calculate(Money.of(1000), Money.of(1500));
+        assertAmount("cash change overpayment", 500, overpaid.change());
+
+        expectIllegalArgument("cash change rejects insufficient payment", new Runnable() {
+            @Override
+            public void run() {
+                calculator.calculate(Money.of(1000), Money.of(999));
+            }
+        });
+        expectIllegalArgument("cash change rejects null total", new Runnable() {
+            @Override
+            public void run() {
+                calculator.calculate(null, Money.of(1000));
+            }
+        });
+        expectIllegalArgument("cash change rejects null received", new Runnable() {
+            @Override
+            public void run() {
+                calculator.calculate(Money.of(1000), null);
+            }
+        });
+    }
+
     private static void assertAmount(String label, long expected, Money actual) {
         if (actual.amount() != expected) {
             throw new AssertionError(label + ": expected " + expected + " but got " + actual.amount());
@@ -179,6 +210,15 @@ public final class CoreSmokeTest {
     private static void assertTrue(String label, boolean condition) {
         if (!condition) {
             throw new AssertionError(label);
+        }
+    }
+
+    private static void expectIllegalArgument(String label, Runnable action) {
+        try {
+            action.run();
+            throw new AssertionError(label);
+        } catch (IllegalArgumentException expected) {
+        } catch (NullPointerException expected) {
         }
     }
 

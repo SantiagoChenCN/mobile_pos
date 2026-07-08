@@ -21,6 +21,7 @@ import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.ui.AppLanguage;
 import com.espsa.mobilepos.ui.Screen;
 import com.espsa.mobilepos.ui.StyleGuide;
+import com.espsa.mobilepos.ui.TextScale;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
 import com.espsa.mobilepos.ui.screens.CheckoutSectionScreen;
@@ -48,10 +49,12 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         configureSystemBars();
         services = ((MobilePosApplication) getApplication()).services();
         language = services.preferencesStore().loadLanguage(this);
+        StyleGuide.setTextScale(services.preferencesStore().loadTextScale(this));
         renderShell();
     }
 
     private void renderShell() {
+        cancelPendingUiTasks();
         LinearLayout root = Views.vertical(this);
         root.setBackgroundColor(StyleGuide.PAPER);
         applySystemBarPadding(root);
@@ -157,7 +160,14 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         } else if (screen == Screen.DAILY) {
             view = new DailySummaryScreen(this, services, language).render();
         } else if (screen == Screen.SETTINGS) {
-            view = new SettingsScreen(this, services, language, this::toggleLanguage).render();
+            view = new SettingsScreen(
+                    this,
+                    services,
+                    language,
+                    this::toggleLanguage,
+                    StyleGuide.textScale(),
+                    this::changeTextScale
+            ).render();
         } else if (screen == Screen.IMPORT) {
             view = new ImportScreen(this, services, language, this, this::renderShell).render();
         } else {
@@ -197,6 +207,12 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         renderShell();
     }
 
+    private void changeTextScale(TextScale textScale) {
+        StyleGuide.setTextScale(textScale);
+        services.preferencesStore().saveTextScale(this, textScale);
+        renderShell();
+    }
+
     private void navigateTo(Screen target) {
         confirmLeaveIfNeeded(() -> {
             screen = target;
@@ -214,6 +230,12 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
             return;
         }
         afterConfirm.run();
+    }
+
+    private void cancelPendingUiTasks() {
+        if (services != null) {
+            services.searchTaskRunner().cancelPending();
+        }
     }
 
     @Override

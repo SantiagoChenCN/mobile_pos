@@ -51,7 +51,7 @@ public final class HomeScreen {
 
     private View entry(String label, Runnable action) {
         Button button = Views.button(context, label);
-        button.setTextSize(22);
+        button.setTextSize(StyleGuide.scaledSp(22));
         button.setGravity(Gravity.CENTER_VERTICAL);
         button.setPadding(18, 18, 18, 18);
         button.setOnClickListener(v -> action.run());

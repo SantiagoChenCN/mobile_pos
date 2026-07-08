@@ -4,7 +4,6 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.text.InputType;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -158,7 +157,7 @@ public final class ProductFormScreen {
     }
 
     private EditText input(int inputType) {
-        EditText input = new EditText(context);
+        EditText input = Views.editText(context);
         input.setSingleLine(true);
         input.setInputType(inputType);
         return input;
@@ -166,13 +165,7 @@ public final class ProductFormScreen {
 
     private Spinner spinner(List<String> options, String selected) {
         Spinner spinner = new Spinner(context);
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
-                context,
-                android.R.layout.simple_spinner_item,
-                options
-        );
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter);
+        spinner.setAdapter(Views.spinnerAdapter(context, options));
         int index = options.indexOf(selected == null ? "" : selected);
         if (index >= 0) {
             spinner.setSelection(index);
