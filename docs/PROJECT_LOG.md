@@ -98,3 +98,27 @@
   - 新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
   - APK 大小：`904393 bytes`。
   - 构建时间：`2026-07-08 01:18:20`。
+## 2026-07-08
+
+### 卡片式 UI 与多格式导入验收完成
+
+- 依据：`修改方案/ui_cards_and_multi_format_import_plan.md`。
+- UI 改动：
+  - 主页从简单按钮列表改为卡片式一级导航。
+  - 导入页改为格式选择卡片，支持鸣盛数据库 `.db` 和通用 CSV 商品表 `.csv`。
+  - 设置页、收银入口页等一级界面同步使用统一卡片风格。
+  - 卡片样式集中在 `Views` / `StyleGuide`，没有在各 screen 中重复散落样式。
+- 导入架构：
+  - 新增 `ImportFormat`、`ProductImportAdapter`、`ImportFormatRegistry`。
+  - 保留鸣盛 `.db` 导入能力，文件选择和导入分发按格式处理。
+  - 新增 `CsvProductImportAdapter`，支持常见字段别名：条码、名称、售价、分类、单位。
+  - CSV 导入会处理重复条码、缺少必填字段、空行、无有效商品等情况，并通过 warning/exception 输出清晰结果。
+  - `AppServices.importProducts(...)` 统一导入入口，导入成功后继续复用商品库覆盖、快照和 metadata 保存逻辑。
+- 回归范围：
+  - 不改变收银、商品编辑、搜索、现金找零、字体大小设置、销售记录逻辑。
+- 验收：
+  - `CoreSmokeTest` 通过。
+  - 完整 debug APK Gradle 构建成功。
+  - 新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
+  - APK 大小：`931969 bytes`。
+  - 构建时间：`2026-07-08 02:00:36`。

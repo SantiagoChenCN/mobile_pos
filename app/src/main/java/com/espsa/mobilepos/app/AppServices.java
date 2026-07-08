@@ -9,6 +9,9 @@ import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CheckoutService;
 import com.espsa.mobilepos.core.editing.ProductEditingService;
 import com.espsa.mobilepos.core.editing.ProductOptionProvider;
+import com.espsa.mobilepos.core.importer.ImportFormat;
+import com.espsa.mobilepos.core.importer.ImportFormatRegistry;
+import com.espsa.mobilepos.core.importer.ProductImportAdapter;
 import com.espsa.mobilepos.core.importer.ProductImportException;
 import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.core.ledger.InMemorySaleRepository;
@@ -18,6 +21,7 @@ import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.DefaultPriceCalculator;
 
+import java.io.InputStream;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,6 +39,7 @@ public final class AppServices {
     private final UserPreferencesStore preferencesStore;
     private final AndroidFileNameResolver fileNameResolver;
     private final SearchTaskRunner searchTaskRunner;
+    private final ImportFormatRegistry importFormatRegistry;
     private String lastImportMessage = "";
     private Cart currentCart;
 
@@ -49,7 +54,8 @@ public final class AppServices {
             ProductLibraryService productLibrary,
             UserPreferencesStore preferencesStore,
             AndroidFileNameResolver fileNameResolver,
-            SearchTaskRunner searchTaskRunner
+            SearchTaskRunner searchTaskRunner,
+            ImportFormatRegistry importFormatRegistry
     ) {
         this.catalog = catalog;
         this.checkout = checkout;
@@ -62,6 +68,7 @@ public final class AppServices {
         this.preferencesStore = preferencesStore;
         this.fileNameResolver = fileNameResolver;
         this.searchTaskRunner = searchTaskRunner;
+        this.importFormatRegistry = importFormatRegistry;
         this.currentCart = checkout.startCart();
     }
 
@@ -89,7 +96,8 @@ public final class AppServices {
                 productLibrary,
                 new UserPreferencesStore(),
                 new AndroidFileNameResolver(),
-                new SearchTaskRunner()
+                new SearchTaskRunner(),
+                ImportFormatRegistry.coreDefaults()
         );
     }
 
@@ -116,7 +124,8 @@ public final class AppServices {
                 productLibrary,
                 new UserPreferencesStore(),
                 new AndroidFileNameResolver(),
-                new SearchTaskRunner()
+                new SearchTaskRunner(),
+                ImportFormatRegistry.coreDefaults()
         );
     }
 
@@ -182,8 +191,56 @@ public final class AppServices {
     }
 
     public ProductImportResult importMingshengDatabase(Context context, Uri uri) throws ProductImportException {
+        return importProducts(context, uri, ImportFormat.MINGSHENG_DB);
+    }
+
+    public ProductImportResult importProducts(Context context, Uri uri, ImportFormat format) throws ProductImportException {
+        if (format == null) {
+            throw new ProductImportException("Import format is required");
+        }
         String fileName = fileNameResolver.displayName(context, uri);
-        ProductImportResult result = new AndroidDbProductImporter().importFromUri(context, uri);
+        ProductImportResult result;
+        if (format == ImportFormat.MINGSHENG_DB) {
+            result = importMingshengDb(context, uri);
+        } else {
+            result = importWithCoreAdapter(context, uri, fileName, format);
+        }
+        return saveImportedProducts(context, fileName, result);
+    }
+
+    private ProductImportResult importMingshengDb(Context context, Uri uri) throws ProductImportException {
+        return new AndroidDbProductImporter().importFromUri(context, uri);
+    }
+
+    private ProductImportResult importWithCoreAdapter(
+            Context context,
+            Uri uri,
+            String fileName,
+            ImportFormat format
+    ) throws ProductImportException {
+        validateImportFileName(fileName, format);
+        ProductImportAdapter adapter = importFormatRegistry.adapterFor(format);
+        InputStream input = null;
+        try {
+            input = context.getContentResolver().openInputStream(uri);
+            if (input == null) {
+                throw new ProductImportException("无法打开选择的文件");
+            }
+            return adapter.importProducts(input, fileName);
+        } catch (ProductImportException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ProductImportException("读取导入文件失败", ex);
+        } finally {
+            closeQuietly(input);
+        }
+    }
+
+    private ProductImportResult saveImportedProducts(
+            Context context,
+            String fileName,
+            ProductImportResult result
+    ) throws ProductImportException {
         try {
             ProductLibraryState state = productLocalStore.saveImportResult(context, result, fileName);
             productRepository.replaceAll(state.products());
@@ -192,6 +249,22 @@ public final class AppServices {
         }
         lastImportMessage = "products=" + result.productCount() + ", promotions=" + result.promotionCount();
         return result;
+    }
+
+    private void validateImportFileName(String fileName, ImportFormat format) throws ProductImportException {
+        if (fileName != null && !fileName.trim().isEmpty() && !format.acceptsFileName(fileName)) {
+            throw new ProductImportException("文件扩展名不匹配导入格式: " + fileName);
+        }
+    }
+
+    private void closeQuietly(java.io.Closeable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+        }
     }
 
     public String lastImportMessage() {

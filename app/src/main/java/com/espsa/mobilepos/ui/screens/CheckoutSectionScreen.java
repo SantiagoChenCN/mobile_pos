@@ -5,10 +5,12 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ScanGateway;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
 
@@ -33,7 +35,7 @@ public final class CheckoutSectionScreen {
     public View render() {
         LinearLayout page = Views.vertical(context);
         page.setPadding(16, 8, 16, 8);
-        page.addView(tabSwitcher(), Views.matchWrap());
+        page.addView(tabSwitcher(), Views.cardParams(context));
 
         content = new FrameLayout(context);
         page.addView(content, new LinearLayout.LayoutParams(
@@ -52,6 +54,21 @@ public final class CheckoutSectionScreen {
     }
 
     private View tabSwitcher() {
+        LinearLayout card = Views.card(context);
+
+        TextView title = Views.text(context, UiText.choose(language, "收银工作台", "Mesa de caja"), 18, StyleGuide.INK);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        card.addView(title, Views.matchWrap());
+
+        TextView meta = Views.text(
+                context,
+                UiText.choose(language, "在收银和交易明细之间切换。", "Cambiar entre venta y detalle de ventas."),
+                14,
+                StyleGuide.MUTED
+        );
+        meta.setPadding(0, Views.dp(context, 4), 0, Views.dp(context, 10));
+        card.addView(meta, Views.matchWrap());
+
         LinearLayout row = Views.horizontal(context);
         checkoutTabButton = Views.button(context, UiText.choose(language, "收银", "Caja"));
         checkoutTabButton.setOnClickListener(v -> switchTo(CheckoutTab.CHECKOUT));
@@ -60,8 +77,9 @@ public final class CheckoutSectionScreen {
         salesTabButton = Views.button(context, UiText.choose(language, "交易明细", "Ventas"));
         salesTabButton.setOnClickListener(v -> switchTo(CheckoutTab.SALES_DETAIL));
         row.addView(salesTabButton, Views.weight(1));
+        card.addView(row, Views.matchWrap());
         updateTabButtons();
-        return row;
+        return card;
     }
 
     private void switchTo(CheckoutTab tab) {
@@ -73,9 +91,15 @@ public final class CheckoutSectionScreen {
     private void updateTabButtons() {
         if (checkoutTabButton != null) {
             checkoutTabButton.setEnabled(activeTab != CheckoutTab.CHECKOUT);
+            checkoutTabButton.setText(activeTab == CheckoutTab.CHECKOUT
+                    ? UiText.choose(language, "收银中", "Caja activa")
+                    : UiText.choose(language, "收银", "Caja"));
         }
         if (salesTabButton != null) {
             salesTabButton.setEnabled(activeTab != CheckoutTab.SALES_DETAIL);
+            salesTabButton.setText(activeTab == CheckoutTab.SALES_DETAIL
+                    ? UiText.choose(language, "明细中", "Ventas activas")
+                    : UiText.choose(language, "交易明细", "Ventas"));
         }
     }
 

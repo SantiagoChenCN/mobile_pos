@@ -1,6 +1,7 @@
 package com.espsa.mobilepos;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -16,6 +17,7 @@ import android.widget.Toast;
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ImportGateway;
 import com.espsa.mobilepos.app.ScanGateway;
+import com.espsa.mobilepos.core.importer.ImportFormat;
 import com.espsa.mobilepos.core.importer.ProductImportException;
 import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.ui.AppLanguage;
@@ -42,6 +44,7 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
     private FrameLayout content;
     private CheckoutSectionScreen activeCheckoutSectionScreen;
     private ProductEditScreen activeProductEditScreen;
+    private ImportFormat pendingImportFormat;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -239,26 +242,68 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
     }
 
     @Override
-    public void requestImportFile() {
+    public void requestImportFile(ImportFormat format) {
+        pendingImportFormat = format == null ? ImportFormat.MINGSHENG_DB : format;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
+        configureImportFilePicker(intent, pendingImportFormat);
         startActivityForResult(intent, IMPORT_FILE_REQUEST);
     }
 
     @Override
     public void onImportFileSelected(Uri uri) {
+        ImportFormat format = pendingImportFormat == null ? ImportFormat.MINGSHENG_DB : pendingImportFormat;
         try {
-            ProductImportResult result = services.importMingshengDatabase(this, uri);
-            Toast.makeText(
-                    this,
-                    UiText.choose(language, "导入成功：", "Importado: ") + result.productCount() + UiText.choose(language, " 个商品", " productos"),
-                    Toast.LENGTH_LONG
-            ).show();
+            ProductImportResult result = services.importProducts(this, uri, format);
+            showImportSuccess(result);
             renderShell();
         } catch (ProductImportException ex) {
-            Toast.makeText(this, ex.getMessage(), Toast.LENGTH_LONG).show();
+            showImportFailure(ex.getMessage());
+        } finally {
+            pendingImportFormat = null;
         }
+    }
+
+    private void configureImportFilePicker(Intent intent, ImportFormat format) {
+        if (format == ImportFormat.GENERIC_CSV) {
+            intent.setType("text/*");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                    "text/csv",
+                    "text/comma-separated-values",
+                    "text/plain"
+            });
+            return;
+        }
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/octet-stream",
+                "application/vnd.sqlite3",
+                "application/x-sqlite3"
+        });
+    }
+
+    private void showImportSuccess(ProductImportResult result) {
+        String message = UiText.choose(language, "商品", "Productos") + ": " + result.productCount()
+                + "\n" + UiText.choose(language, "促销", "Promociones") + ": " + result.promotionCount()
+                + "\n" + UiText.choose(language, "警告", "Advertencias") + ": " + result.warnings().size()
+                + "\n" + UiText.choose(language, "文件", "Archivo") + ": " + emptyText(result.sourceFileName());
+        new AlertDialog.Builder(this)
+                .setTitle(UiText.choose(language, "导入成功", "Importacion completa"))
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void showImportFailure(String message) {
+        new AlertDialog.Builder(this)
+                .setTitle(UiText.choose(language, "导入失败", "No se pudo importar"))
+                .setMessage(emptyText(message))
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private String emptyText(String value) {
+        return value == null || value.trim().isEmpty() ? "-" : value.trim();
     }
 
     @Override
@@ -288,10 +333,16 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
             }
             return;
         }
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == IMPORT_FILE_REQUEST && resultCode == RESULT_OK && data != null) {
-            onImportFileSelected(data.getData());
+        if (requestCode == IMPORT_FILE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                onImportFileSelected(data.getData());
+            } else {
+                pendingImportFormat = null;
+                Toast.makeText(this, UiText.choose(language, "未选择文件", "Sin archivo seleccionado"), Toast.LENGTH_SHORT).show();
+            }
+            return;
         }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override

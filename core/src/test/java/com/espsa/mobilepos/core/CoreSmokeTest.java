@@ -14,7 +14,10 @@ import com.espsa.mobilepos.core.editing.ProductPersistenceException;
 import com.espsa.mobilepos.core.editing.ProductPersistencePort;
 import com.espsa.mobilepos.core.editing.ProductUpdateResult;
 import com.espsa.mobilepos.core.exporter.CsvSalesExportAdapter;
+import com.espsa.mobilepos.core.importer.CsvProductImportAdapter;
 import com.espsa.mobilepos.core.importer.MingshengProductMapper;
+import com.espsa.mobilepos.core.importer.ProductImportException;
+import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.core.ledger.DailySummary;
 import com.espsa.mobilepos.core.ledger.InMemorySaleRepository;
 import com.espsa.mobilepos.core.ledger.LedgerService;
@@ -26,7 +29,9 @@ import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.CartPriceResult;
 import com.espsa.mobilepos.core.pricing.DefaultPriceCalculator;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Arrays;
@@ -64,6 +69,7 @@ public final class CoreSmokeTest {
         runSearchIndexUpdateChecks(productRepository);
         runProductEditingChecks(productRepository);
         runCashChangeChecks();
+        runCsvImportChecks();
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
         CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
@@ -201,6 +207,32 @@ public final class CoreSmokeTest {
         });
     }
 
+    private static void runCsvImportChecks() throws Exception {
+        CsvProductImportAdapter adapter = new CsvProductImportAdapter();
+        String csv = "barcode,name,price,category,unit\n"
+                + "1001,Arroz Largo,1800,almacen,un\n"
+                + "1002,\"Cafe, Molido\",2500,bebidas,pack\n"
+                + "1002,Cafe Duplicado,2600,bebidas,pack\n"
+                + ",Sin Barcode,1000,almacen,un\n";
+        ProductImportResult result = adapter.importProducts(csvStream(csv), "products.csv");
+        assertTrue("csv import keeps valid products", result.productCount() == 2);
+        assertTrue("csv import stores quoted comma name", containsProductName(result.products(), "Cafe, Molido"));
+        assertTrue("csv import reports row warnings", result.warnings().size() == 2);
+
+        String aliasCsv = "codigo,nombre,precio,categoria,unidad\n"
+                + "2001,Leche Entera,1200,lacteos,un\n";
+        ProductImportResult aliasResult = adapter.importProducts(csvStream(aliasCsv), "alias.csv");
+        assertTrue("csv import supports aliases", aliasResult.productCount() == 1);
+        assertTrue("csv import alias barcode is searchable data", "2001".equals(aliasResult.products().get(0).barcode()));
+
+        expectProductImportException("csv import rejects missing price column", new ImportAction() {
+            @Override
+            public void run() throws ProductImportException {
+                adapter.importProducts(csvStream("barcode,name\n1,No Price\n"), "bad.csv");
+            }
+        });
+    }
+
     private static void assertAmount(String label, long expected, Money actual) {
         if (actual.amount() != expected) {
             throw new AssertionError(label + ": expected " + expected + " but got " + actual.amount());
@@ -222,6 +254,18 @@ public final class CoreSmokeTest {
         }
     }
 
+    private static void expectProductImportException(String label, ImportAction action) {
+        try {
+            action.run();
+            throw new AssertionError(label);
+        } catch (ProductImportException expected) {
+        }
+    }
+
+    private static ByteArrayInputStream csvStream(String value) {
+        return new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
+    }
+
     private static boolean containsProductName(List<Product> products, String name) {
         for (Product product : products) {
             if (product.name().equals(name)) {
@@ -235,5 +279,9 @@ public final class CoreSmokeTest {
         @Override
         public void saveManualProducts(List<Product> products) throws ProductPersistenceException {
         }
+    }
+
+    private interface ImportAction {
+        void run() throws ProductImportException;
     }
 }

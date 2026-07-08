@@ -155,3 +155,15 @@
 - 已新增 `CashChangeCalculator` / `CashChangeResult` 并在 `CoreSmokeTest` 覆盖现金找零边界。
 - 验收已通过：页面类中不再散落未缩放的 `new EditText(...)` 或默认 `ArrayAdapter`；`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
 - 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `904393 bytes`，构建时间 `2026-07-08 01:18:20`。
+## 2026-07-08 卡片式 UI 与多格式导入验收完成
+
+- 已按 `修改方案/ui_cards_and_multi_format_import_plan.md` 完成本轮开发验收。
+- 一级界面已从简单按钮陈列改为更适合收银工具的卡片式工作台：主页、导入页、设置页、收银入口页使用统一卡片样式，文本层级和主操作更清晰。
+- 导入页已改为导入格式卡片，可选择鸣盛 `.db` 数据库或通用 `.csv` 商品表。
+- 导入流程已支持按格式打开系统文件选择器，并保留鸣盛 `.db` 原有导入能力。
+- 已新增通用导入架构：`ImportFormat`、`ProductImportAdapter`、`ImportFormatRegistry`，导入格式选择与解析逻辑不写入 UI 页面。
+- 已新增 `CsvProductImportAdapter`，第一版支持通用 CSV 商品表，字段别名覆盖条码、名称、售价、分类、单位；缺少必填字段、空文件、无有效商品会给出错误或 warning。
+- `AppServices` 已提供统一导入入口，导入成功后继续复用现有商品库覆盖、快照、metadata 和本地修改状态重置逻辑。
+- 回归保持：收银、商品编辑、搜索、现金找零、字体大小设置不改变业务逻辑。
+- 验收已通过：`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
+- 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `931969 bytes`，构建时间 `2026-07-08 02:00:36`。

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.espsa.mobilepos.app.AppServices;
@@ -38,32 +39,60 @@ public final class SettingsScreen {
     }
 
     public View render() {
+        ScrollView scroll = new ScrollView(context);
         LinearLayout page = Views.vertical(context);
-        page.setPadding(16, 8, 16, 8);
+        page.setPadding(16, 8, 16, 16);
 
         TextView title = Views.text(context, UiText.choose(language, "设置 / Ajustes", "Ajustes"), 24, StyleGuide.INK);
         StyleGuide.pageTitle(title);
         page.addView(title, Views.matchWrap());
 
-        page.addView(info(UiText.choose(language, "当前商品数", "Productos"), Integer.toString(services.catalog().productCount())));
-        page.addView(info(UiText.choose(language, "App 版本", "Version"), "debug"));
-        page.addView(info(UiText.choose(language, "模式", "Modo"), UiText.choose(language, "单机离线", "Local sin sincronizacion")));
-        page.addView(info(UiText.choose(language, "当前语言", "Idioma"), language == AppLanguage.ZH ? "中文" : "Espanol"));
-        page.addView(info(UiText.choose(language, "字体大小", "Tamano de letra"), currentTextScale.label(language)));
+        page.addView(systemCard(), Views.cardParams(context));
+        page.addView(languageCard(), Views.cardParams(context));
+        page.addView(textScaleCard(), Views.cardParams(context));
+        scroll.addView(page);
+        return scroll;
+    }
 
-        Button languageButton = Views.button(context, language == AppLanguage.ZH ? "Cambiar a Espanol" : "切换到中文");
-        languageButton.setOnClickListener(v -> onToggleLanguage.run());
-        page.addView(languageButton, Views.matchWrap());
-        page.addView(textScaleButtons(), Views.matchWrap());
-        return page;
+    private View systemCard() {
+        LinearLayout card = Views.card(context);
+        addCardTitle(card, UiText.choose(language, "基础信息", "Informacion basica"));
+        card.addView(info(UiText.choose(language, "当前商品数", "Productos"), Integer.toString(services.catalog().productCount())));
+        card.addView(info(UiText.choose(language, "App 版本", "Version"), "debug"));
+        card.addView(info(UiText.choose(language, "模式", "Modo"), UiText.choose(language, "单机离线", "Local sin sincronizacion")));
+        return card;
+    }
+
+    private View languageCard() {
+        return Views.actionCard(
+                context,
+                UiText.choose(language, "语言", "Idioma"),
+                UiText.choose(language, "切换收银、商品维护和导入页面的显示语言。", "Cambia el idioma de caja, productos e importacion."),
+                language == AppLanguage.ZH ? "中文" : "Espanol",
+                language == AppLanguage.ZH ? "Cambiar a Espanol" : "切换到中文",
+                onToggleLanguage
+        );
+    }
+
+    private View textScaleCard() {
+        LinearLayout card = Views.card(context);
+        addCardTitle(card, UiText.choose(language, "字体大小", "Tamano de letra"));
+        card.addView(info(UiText.choose(language, "当前选择", "Seleccion actual"), currentTextScale.label(language)));
+
+        TextView helper = Views.text(
+                context,
+                UiText.choose(language, "用于改善竖屏收银时的可读性。", "Mejora la lectura en pantalla vertical."),
+                14,
+                StyleGuide.MUTED
+        );
+        helper.setPadding(0, Views.dp(context, 6), 0, Views.dp(context, 8));
+        card.addView(helper, Views.matchWrap());
+        card.addView(textScaleButtons(), Views.matchWrap());
+        return card;
     }
 
     private View textScaleButtons() {
         LinearLayout panel = Views.vertical(context);
-        panel.setPadding(0, 14, 0, 0);
-
-        TextView label = Views.text(context, UiText.choose(language, "选择字体大小", "Elegir tamano de letra"), 14, StyleGuide.MUTED);
-        panel.addView(label, Views.matchWrap());
 
         LinearLayout firstRow = Views.horizontal(context);
         firstRow.addView(textScaleButton(TextScale.SMALL), Views.weight(1));
@@ -80,7 +109,7 @@ public final class SettingsScreen {
     private Button textScaleButton(TextScale textScale) {
         String label = textScale.label(language);
         if (textScale == currentTextScale) {
-            label = label + UiText.choose(language, " ✓", " ✓");
+            label = label + UiText.choose(language, " 选中", " activo");
         }
         Button button = Views.button(context, label);
         button.setEnabled(textScale != currentTextScale);
@@ -88,15 +117,14 @@ public final class SettingsScreen {
         return button;
     }
 
+    private void addCardTitle(LinearLayout card, String title) {
+        TextView titleView = Views.text(context, title, 18, StyleGuide.INK);
+        titleView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        card.addView(titleView, Views.matchWrap());
+    }
+
     private View info(String label, String value) {
-        LinearLayout row = Views.vertical(context);
-        row.setPadding(0, 14, 0, 14);
-        TextView labelView = Views.text(context, label, 14, StyleGuide.MUTED);
-        row.addView(labelView, Views.matchWrap());
-        TextView valueView = Views.text(context, value, 22, StyleGuide.INK);
-        valueView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        row.addView(valueView, Views.matchWrap());
-        return row;
+        return Views.infoBlock(context, label, value);
     }
 
     public interface TextScaleChangeHandler {
