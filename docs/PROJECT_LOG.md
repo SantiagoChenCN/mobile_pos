@@ -122,3 +122,123 @@
   - 新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
   - APK 大小：`931969 bytes`。
   - 构建时间：`2026-07-08 02:00:36`。
+## 2026-07-09
+
+### 电脑端同步工具后端完成
+
+- 依据：`修改方案/pc_sync_http_tool_plan.md`。
+- 新增目录：`E:\手机收银软件开发\pc-sync-tool`。
+- 后端完成项：
+  - `paths.py`：统一 `%APPDATA%` / `%LOCALAPPDATA%` 下的 `MobilePosSync` 路径。
+  - `config.py`：配置读写、默认值、token 生成和校验。
+  - `source_locator.py`：文件模式和文件夹自动寻找模式，SQLite 只读校验 `CJQ_GOODLIST`。
+  - `backup_worker.py`：稳定性检查、临时文件复制、SHA-256、latest/manifest 原子替换、历史备份保留。
+  - `http_server.py`：实现 `/health`、`/manifest.json`、`/latest.db`，token 错误返回 403。
+  - `event_log.py`：最近 200 条事件日志。
+  - `startup.py`：当前用户 HKCU Run 开机启动封装。
+  - `qr_code.py`：生成 `mobilepos-sync://setup?...` 同步地址。
+- 安全边界：
+  - 只读打开鸣盛源 `.db`。
+  - 只写工具自己的 AppData 配置、备份和日志目录。
+  - 不修改、删除、移动、重命名鸣盛原目录任何文件。
+- 验收：
+  - `python -m unittest discover -s tests` 通过，12 个测试 OK。
+  - `python -m compileall src tests` 通过。
+
+### 电脑端同步工具后端一致性修复
+
+- 修复 HTTP 服务默认绑定地址未使用 `selectedHost` 的问题；未显式传入 `bind_host` 时现在绑定 `config.selected_host`。
+- 修复 `latest.db` 和 `manifest.json` 发布一致性风险；`/latest.db` 下载前必须验证 manifest 存在、`ok=true`、`sizeBytes` 匹配、`sha256` 匹配。
+- 修复复制数据库后缺少二次稳定校验的问题；复制完成后会再次检查源文件 size/mtime，复制期间变化则跳过本轮且不发布。
+- 修复无有效 manifest/hash 时仍可能下载 `latest.db` 的问题；manifest 缺失返回 `NO_BACKUP_READY`，hash/size 不匹配返回错误并拒绝发送 DB。
+- 回归测试已新增对应覆盖；`python -m unittest discover -s tests` 通过，16 个测试 OK。
+
+### 电脑端同步工具发布/下载竞态修复
+
+- 修复 `latest.db` 下载和备份发布之间没有共享锁的问题。
+- 新增 `publish_lock.py`，同一套 `AppPaths` 会按备份目录复用同一把 `RLock`。
+- `BackupWorker` 发布 `latest.db` 和 `manifest.json` 时持有发布锁。
+- `SyncHttpService` 对 `/latest.db` 执行“校验 manifest/hash + 发送文件”时持有同一把发布锁，避免出现旧 hash header 发送新 DB 文件的竞态。
+- 新增回归测试确认：
+  - `BackupWorker` 与 `SyncHttpService` 共享同一把发布锁。
+  - `/latest.db` 请求会等待发布锁释放后才校验并发送文件。
+- 验收：`python -m unittest discover -s tests` 通过，20 个测试 OK；`python -m compileall src tests` 通过。
+
+### 电脑端同步工具前端接入
+
+- 依据：`修改方案/pc_sync_http_tool_plan.md`。
+- 新增 `pc-sync-tool/src/ui/`：
+  - `main_window.py`：PySide6 主窗口、托盘菜单、二维码显示、状态刷新、日志列表、关闭窗口最小化到托盘。
+  - `controller.py`：UI 到后端模块的薄控制器，负责保存配置、启动/停止 HTTP、立即备份、读取状态和同步地址。
+  - `network.py`：列出可选局域网 IPv4 地址。
+- 更新 `pc-sync-tool/src/app.py`：
+  - 无参数默认启动桌面 GUI。
+  - 保留 `--backup-once`、`--serve`、`--print-setup-url` 后端命令。
+  - 修复 `--print-setup-url` 打印后继续输出 help 的问题。
+- 更新 `pc-sync-tool/requirements.txt`，补充 `PySide6` 和 `qrcode[pil]`。
+- 安全边界：
+  - 前端不直接复制文件、不直接写 manifest、不直接操作 HTTP socket 细节。
+  - 来源检测、备份、manifest、HTTP、事件日志均调用既有后端模块。
+- 验收：
+  - `python -m unittest discover -s tests` 通过，12 个测试 OK。
+  - `python -m compileall src tests` 通过。
+  - 使用工作区临时 AppData 验证 `python src\app.py --print-setup-url` 正常输出同步地址。
+- 后续验收：
+  - GUI 依赖和 offscreen 主窗口 smoke test 已在后续修复段落完成；正式打包前仍建议在 Windows 桌面真实打开一次窗口确认托盘菜单和关闭最小化交互。
+
+### 电脑端同步工具前端修复
+
+- 修复设置页里选择的局域网 IP 没有显式传给 HTTP 服务的问题：
+  - UI 控制器启动服务时将 `config.selected_host` 作为 `bind_host` 传入 `SyncHttpService`。
+  - CLI `--serve` 同样按配置的 `selected_host` 绑定。
+- 补充 UI 状态：
+  - 状态区新增“服务绑定”，显示当前实际监听的 IP:端口。
+  - 状态区新增“二维码”，显示二维码指向地址，并提示是否与当前服务绑定一致。
+- 修复开机自启动命令：
+  - 源码运行时注册为 `python.exe src\app.py --gui`。
+  - 打包运行时注册为 exe 本身。
+- 验收：
+  - 新增 UI 控制器绑定 IP 测试。
+  - 新增源码/打包自启动命令测试。
+  - `python -m unittest discover -s tests` 通过，18 个测试 OK。
+  - `python -m compileall src tests` 通过。
+
+### 电脑端同步工具 GUI 依赖环境与最终验收
+
+- 环境补齐：
+  - 新增/确认独立 Python 虚拟环境：`E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv`。
+  - 使用该环境验证 `PySide6 6.11.1`、`qrcode`、`Pillow 12.3.0` 可正常导入。
+  - 注意：系统 Python 仍不一定能直接导入这些依赖；电脑端 GUI 验收和运行应优先使用该虚拟环境 Python，或后续打包为 exe。
+- 依赖接入后回归：
+  - 使用虚拟环境 Python 运行 `python -m unittest discover -s tests`，20 个测试 OK。
+  - 使用虚拟环境 Python 对关键源码执行 `py_compile`，通过。
+  - 单独验证二维码渲染链路，`_qr_pixmap(...)` 可生成非空 `220x220` `QPixmap`。
+- 发现并修复 PySide6 6.11.1 兼容问题：
+  - 问题：`main_window.py` 原先使用 `self.style().SP_ComputerIcon`，在当前 PySide6 中 `QCommonStyle` 没有该属性，构建 `MainWindow` 时会抛出 `AttributeError`。
+  - 修复：导入 `QStyle`，并改为 `self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)`。
+  - 修复后再次运行单测和 `py_compile`，均通过。
+- 最终 GUI smoke test：
+  - 使用 `QT_QPA_PLATFORM=offscreen` 构建 `QApplication`、`UiController`、`MainWindow`。
+  - 使用临时 AppData 配置 `selected_host=127.0.0.1` 和临时端口，窗口构建时 HTTP 服务可自动启动。
+  - 验证输出包含：`window_title=MobilePosSync 电脑同步工具`、`service_running=True`、`qr_status=可用`、`qr_pixmap_null=False`。
+- 真实 Windows 托盘人工确认：
+  - 用户已按清单确认窗口正常打开，二维码正常显示，关闭窗口会最小化到托盘，托盘图标可重新打开窗口，托盘菜单和退出流程正常。
+- 结论：
+  - 电脑端同步工具阶段 A 已完成代码级验收、无界面 GUI smoke test 和真实 Windows 托盘人工确认。
+  - 本轮从电脑端开发开始的修复链路已闭环：后端只读安全边界、HTTP/token API、manifest/hash 校验、发布锁、前端绑定地址与二维码状态、自启动命令、PySide6 兼容和依赖环境均已记录。
+  - 后续可以进入手机端同步开发。
+
+### 电脑端同步工具发布同步
+
+- 本轮同步内容：
+  - 新增 `pc-sync-tool` 到发布仓库，包含电脑端同步工具源码、PySide6 前端、后端 HTTP/token/manifest 逻辑、测试和运行脚本。
+  - 新增 `docs/plans/pc_sync_http_tool_plan.md` 到发布仓库，作为本轮电脑端同步工具阶段 A 的设计和验收依据。
+  - 同步 `docs/PROJECT_STATUS.md` 和 `docs/PROJECT_LOG.md`，记录电脑端同步工具阶段 A 已完成验收。
+- 回归验证：
+  - Android debug APK Gradle 构建成功，本轮源码判断为 up-to-date。
+  - `CoreSmokeTest` 通过。
+  - 使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 运行 `python -m unittest discover -s tests`，20 个测试 OK。
+  - `python -m compileall src tests` 通过。
+- 发布边界：
+  - 发布仓库只同步源码、计划文档、进度文档和 APK。
+  - 不提交真实经营数据库、商品导出表、`python_envs` 虚拟环境、`__pycache__` 或 `.pyc` 缓存文件。

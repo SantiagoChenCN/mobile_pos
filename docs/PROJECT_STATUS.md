@@ -1,6 +1,6 @@
 # 手机应急收银 App 项目进度
 
-更新日期：2026-07-07
+更新日期：2026-07-09
 
 ## 当前目标
 
@@ -14,12 +14,13 @@
 - 便携构建环境：`E:\AndroidBuildEnv`
 - 最新鸣盛商品数据库样本：`E:\手机收银软件开发\AGT_MAIN_20260705.db`
 - 最新 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`
+- 电脑端同步工具：`E:\手机收银软件开发\pc-sync-tool`
 
 ## 远程与发布位置
 
 - GitHub 仓库：https://github.com/SantiagoChenCN/mobile_pos
 - GitHub 状态：同步到 `main`，具体最新提交以仓库为准
-- Google Drive APK：https://drive.google.com/file/d/1ohzXrAsUOfK3cicSmrIKpilWcjryflE7/view?usp=drivesdk
+- Google Drive APK：https://drive.google.com/file/d/1zyOpiRhhO8fvbKNIe4hevnzrfDg25WBy/view?usp=drivesdk
 - GitHub 仓库内 APK：`dist/EmergencyPOS-debug.apk`
 
 ## 已实现
@@ -73,6 +74,8 @@
 - core 层已有 CSV 销售导出适配器。
 - 已生成可直接安装的 debug APK。
 - 已上传源码、文档和 APK 到 GitHub。
+- 已新增电脑端 `pc-sync-tool` 后端骨架，完成配置、AppData 路径、源 `.db` 定位、`CJQ_GOODLIST` 只读校验、SHA-256、manifest、原子备份、历史保留、HTTP API、事件日志、开机启动注册表封装和测试。
+- 已新增电脑端 `pc-sync-tool` PySide6 前端：主窗口、托盘菜单、来源选择、备份间隔、端口/IP/token 设置、二维码展示、状态面板、日志列表、关闭窗口最小化到托盘。
 
 ## 已整理的开发方案
 
@@ -97,23 +100,25 @@
 - 2026-07-06 修复收银/交易明细 tab 返回问题后，`CoreSmokeTest` 再次通过。
 - 2026-07-06 修复收银/交易明细 tab 返回问题后，完整 debug APK Gradle 构建成功。
 - 2026-07-07 精简收银页商品行 UI 后，`CoreSmokeTest` 通过，完整 debug APK Gradle 构建成功。
-- 最新本地 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 876821 bytes，构建时间 2026-07-07 18:11:54。
+- 最新本地 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 931969 bytes，构建时间 2026-07-08 02:00:36。
 - 真实商品数据库中确认 `huevo`、`huevo blanco`、`maple` 等关键词存在匹配数据。
 - 搜索回归测试覆盖：
   - `huevo` 返回全部匹配测试商品。
   - `maple huevo` 可乱序匹配。
   - `maple de huevo` 可忽略连接词匹配 `Huevo Blanco Maple`。
+- 2026-07-09 电脑端同步工具前端接入后，后端 12 个单测继续通过，`python -m compileall src tests` 通过；使用工作区临时 AppData 验证 `--print-setup-url` 输出正常。
+- 2026-07-09 电脑端同步工具前端修复后，单测扩展到 18 个并全部通过，`python -m compileall src tests` 通过；覆盖所选局域网 IP 传给 HTTP 服务、自启动命令区分源码/打包运行。
 
 ## 尚未完成
 
 - 最新前端接入后还需要在真机或模拟器上做端到端手工验收：商品新建、修改、删除、导入、回滚、扫码进入商品编辑、收银加入商品、当前购物车快照不随商品编辑变化。
 - 收银和商品编辑中的关键词搜索在弹出结果前有短暂停顿，需优化搜索索引、结果数量限制或异步搜索体验。
-- Google Drive 中的 APK 尚未更新为本次 tab 修复后的新版本。
 - 销售记录持久化：当前销售单保存在内存里，App 被系统杀掉或重启后会丢失。需要实现本地销售存储。
 - 按日期导出 Excel/CSV 的 Android UI：core 已有 CSV 导出适配器，但手机界面还没有完整导出入口。
 - `.xlsx` 商品导入：设计文档中保留了 Excel 备用导入路径，但当前 App 只接入 `.db` 导入。
 - 交易明细页目前是当前会话内明细，后续应接入持久化销售仓库。
 - 正式 release APK 签名：当前产物是 debug APK。
+- 电脑端同步工具 GUI 依赖环境、主窗口构建、HTTP 自动启动、二维码渲染和真实 Windows 托盘人工确认均已通过。
 
 ## 重要技术边界
 
@@ -167,3 +172,45 @@
 - 回归保持：收银、商品编辑、搜索、现金找零、字体大小设置不改变业务逻辑。
 - 验收已通过：`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
 - 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `931969 bytes`，构建时间 `2026-07-08 02:00:36`。
+## 2026-07-09 电脑端同步工具后端完成
+
+- 已按 `修改方案/pc_sync_http_tool_plan.md` 完成阶段 A 的电脑端后端开发，目录为 `E:\手机收银软件开发\pc-sync-tool`。
+- 已实现纯 Python 标准库后端模块：配置读写、AppData 路径、token、源文件/文件夹定位、SQLite 只读表校验、稳定性检查、原子备份、manifest、HTTP API、事件日志、注册表开机启动封装和同步地址生成。
+- HTTP API 覆盖 `/health`、`/manifest.json`、`/latest.db`，均要求 `token`；错误 token 返回 403。
+- 后端只读打开鸣盛源 `.db`，只写入工具自己的 AppData 目录，不修改鸣盛原目录文件。
+- 验收已通过：`python -m unittest discover -s tests` 通过，`python -m compileall src tests` 通过。
+
+### 2026-07-09 后端一致性修复
+
+- HTTP 服务默认绑定地址已改为使用 `selectedHost`。
+- 备份复制后已增加源文件二次稳定校验，复制期间源文件变化不会发布新版本。
+- `/latest.db` 下载前已强制校验 manifest 与实际文件的 size/hash 一致性。
+- manifest 缺失、无 hash、size 不匹配或 hash 不匹配时，HTTP 不再发送数据库文件。
+- 回归测试已通过：`python -m unittest discover -s tests` 通过，16 个测试 OK。
+
+### 2026-07-09 发布/下载竞态修复
+
+- 已新增共享发布锁，覆盖备份发布 `latest.db` / `manifest.json` 和 HTTP `/latest.db` 的“校验+发送”临界区。
+- 已消除 HTTP 校验通过后备份线程替换 `latest.db`，导致旧 hash header 发送新 DB 文件的竞态窗口。
+- 回归测试已通过：`python -m unittest discover -s tests` 通过，20 个测试 OK；`python -m compileall src tests` 通过。
+## 2026-07-09 电脑端同步工具前端接入
+
+- 已按 `修改方案/pc_sync_http_tool_plan.md` 完成阶段 A 的电脑端前端代码接入。
+- 新增 `pc-sync-tool/src/ui/`，包含 Qt 主窗口、控制器和局域网 IP 候选辅助。
+- `python src\app.py` 默认启动桌面工具；`--backup-once`、`--serve`、`--print-setup-url` 后端命令继续保留。
+- 前端只调用后端模块：保存配置、启动/停止 HTTP、立即备份、检测来源、读取 manifest、读取事件日志、生成同步地址；不直接复制源文件、不直接写 manifest。
+- 已修复所选局域网 IP 没有显式传给后端服务的问题；UI 会显示实际服务绑定地址和二维码状态。
+- 已修复开机自启动命令：源码运行写入 `python.exe src\app.py --gui`，打包运行写入 exe 本身。
+- 依赖已补充 `PySide6` 和 `qrcode[pil]`。
+- 验证已通过：18 个单测通过，`python -m compileall src tests` 通过；使用工作区临时 AppData 验证 `--print-setup-url` 输出正常。
+- GUI 依赖与最终 smoke test 已完成：使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 验证 `PySide6 6.11.1`、`qrcode`、`Pillow 12.3.0` 可导入；`20` 个单测通过；关键源码 `py_compile` 通过；offscreen 构建 `MainWindow` 成功，HTTP 服务启动成功，二维码 `QPixmap` 生成成功。
+- 已修复 PySide6 6.11.1 图标 API 兼容问题：`main_window.py` 改为使用 `QStyle.StandardPixmap.SP_ComputerIcon`，避免 `QCommonStyle` 无 `SP_ComputerIcon` 属性导致主窗口启动崩溃。
+
+### 2026-07-09 电脑端同步工具最终验收结论
+
+- 电脑端后端、前端、GUI 依赖环境与关键兼容修复已完成验收。
+- 当前电脑端同步工具核心能力已闭环：只读定位鸣盛 `.db`、复制到工具自有 AppData、生成 manifest/hash、保留最近 5 个历史备份、通过 token HTTP API 提供 `/health`、`/manifest.json`、`/latest.db`、二维码连接地址、托盘/窗口 UI、自动备份间隔配置和开机启动命令封装。
+- 本轮修复闭环包括：HTTP 绑定 `selectedHost`、源 DB 复制后二次稳定校验、manifest/latest hash/size 下载前校验、共享发布锁消除下载/发布竞态、源码/打包自启动命令区分、服务绑定/二维码状态 UI 显示、PySide6 图标兼容修复。
+- 验证结果：`python -m unittest discover -s tests` 通过，`20` 个测试 OK；关键源码 `py_compile` 通过；offscreen GUI smoke test 输出 `service_running=True`、`qr_status=可用`、`qr_pixmap_null=False`。
+- 说明：当前 smoke test 已验证主窗口构建、HTTP 自动启动和二维码渲染；用户已人工确认真实 Windows 窗口、二维码、关闭最小化到托盘、托盘菜单和退出流程均正常。
+- 下一步可以进入手机端接收/扫码/下载/校验/导入流程开发。
