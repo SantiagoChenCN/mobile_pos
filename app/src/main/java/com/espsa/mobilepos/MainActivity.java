@@ -44,6 +44,7 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
     private FrameLayout content;
     private CheckoutSectionScreen activeCheckoutSectionScreen;
     private ProductEditScreen activeProductEditScreen;
+    private ImportScreen activeImportScreen;
     private ImportFormat pendingImportFormat;
 
     @Override
@@ -126,6 +127,7 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         content.removeAllViews();
         activeCheckoutSectionScreen = null;
         activeProductEditScreen = null;
+        activeImportScreen = null;
         View view;
         if (screen == Screen.HOME) {
             view = new HomeScreen(this, language, new HomeScreen.HomeNavigation() {
@@ -172,7 +174,8 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
                     this::changeTextScale
             ).render();
         } else if (screen == Screen.IMPORT) {
-            view = new ImportScreen(this, services, language, this, this::renderShell).render();
+            activeImportScreen = new ImportScreen(this, services, language, this, this, this::renderShell);
+            view = activeImportScreen.render();
         } else {
             view = new HomeScreen(this, language, new HomeScreen.HomeNavigation() {
                 @Override
@@ -322,6 +325,12 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
                     renderShell();
                     if (activeProductEditScreen != null) {
                         activeProductEditScreen.addScannedBarcode(barcode);
+                    }
+                } else if (pendingScanScreen == Screen.IMPORT) {
+                    screen = Screen.IMPORT;
+                    renderShell();
+                    if (activeImportScreen != null) {
+                        activeImportScreen.addScannedBarcode(barcode);
                     }
                 } else {
                     screen = Screen.CHECKOUT;

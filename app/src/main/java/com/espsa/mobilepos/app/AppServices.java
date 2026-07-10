@@ -20,7 +20,13 @@ import com.espsa.mobilepos.core.library.ProductLibraryState;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.DefaultPriceCalculator;
+import com.espsa.mobilepos.app.sync.ComputerSyncClient;
+import com.espsa.mobilepos.app.sync.ComputerSyncException;
+import com.espsa.mobilepos.app.sync.ComputerSyncManifest;
+import com.espsa.mobilepos.app.sync.ComputerSyncService;
+import com.espsa.mobilepos.app.sync.ComputerSyncStore;
 
+import java.io.File;
 import java.io.InputStream;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -40,6 +46,7 @@ public final class AppServices {
     private final AndroidFileNameResolver fileNameResolver;
     private final SearchTaskRunner searchTaskRunner;
     private final ImportFormatRegistry importFormatRegistry;
+    private final ComputerSyncService computerSyncService;
     private String lastImportMessage = "";
     private Cart currentCart;
 
@@ -55,7 +62,8 @@ public final class AppServices {
             UserPreferencesStore preferencesStore,
             AndroidFileNameResolver fileNameResolver,
             SearchTaskRunner searchTaskRunner,
-            ImportFormatRegistry importFormatRegistry
+            ImportFormatRegistry importFormatRegistry,
+            ComputerSyncService computerSyncService
     ) {
         this.catalog = catalog;
         this.checkout = checkout;
@@ -69,6 +77,7 @@ public final class AppServices {
         this.fileNameResolver = fileNameResolver;
         this.searchTaskRunner = searchTaskRunner;
         this.importFormatRegistry = importFormatRegistry;
+        this.computerSyncService = computerSyncService;
         this.currentCart = checkout.startCart();
     }
 
@@ -97,7 +106,8 @@ public final class AppServices {
                 new UserPreferencesStore(),
                 new AndroidFileNameResolver(),
                 new SearchTaskRunner(),
-                ImportFormatRegistry.coreDefaults()
+                ImportFormatRegistry.coreDefaults(),
+                new ComputerSyncService(new ComputerSyncStore(), new ComputerSyncClient())
         );
     }
 
@@ -125,7 +135,8 @@ public final class AppServices {
                 new UserPreferencesStore(),
                 new AndroidFileNameResolver(),
                 new SearchTaskRunner(),
-                ImportFormatRegistry.coreDefaults()
+                ImportFormatRegistry.coreDefaults(),
+                new ComputerSyncService(new ComputerSyncStore(), new ComputerSyncClient())
         );
     }
 
@@ -181,6 +192,10 @@ public final class AppServices {
         return searchTaskRunner;
     }
 
+    public ComputerSyncService computerSync() {
+        return computerSyncService;
+    }
+
     public Cart currentCart() {
         return currentCart;
     }
@@ -195,10 +210,21 @@ public final class AppServices {
     }
 
     public ProductImportResult importProducts(Context context, Uri uri, ImportFormat format) throws ProductImportException {
+        return importProducts(context, uri, format, fileNameResolver.displayName(context, uri));
+    }
+
+    public ProductImportResult importProducts(
+            Context context,
+            Uri uri,
+            ImportFormat format,
+            String sourceFileName
+    ) throws ProductImportException {
         if (format == null) {
             throw new ProductImportException("Import format is required");
         }
-        String fileName = fileNameResolver.displayName(context, uri);
+        String fileName = sourceFileName == null || sourceFileName.trim().isEmpty()
+                ? fileNameResolver.displayName(context, uri)
+                : sourceFileName.trim();
         ProductImportResult result;
         if (format == ImportFormat.MINGSHENG_DB) {
             result = importMingshengDb(context, uri);
@@ -206,6 +232,42 @@ public final class AppServices {
             result = importWithCoreAdapter(context, uri, fileName, format);
         }
         return saveImportedProducts(context, fileName, result);
+    }
+
+    public ProductImportResult syncProductsFromComputer(Context context) throws ProductImportException {
+        try {
+            return syncProductsFromComputer(context, computerSyncService.checkManifest(context));
+        } catch (ComputerSyncException ex) {
+            throw new ProductImportException(ex.getMessage(), ex);
+        }
+    }
+
+    public ProductImportResult syncProductsFromComputer(
+            Context context,
+            ComputerSyncManifest confirmedManifest
+    ) throws ProductImportException {
+        File downloadedDb = null;
+        try {
+            downloadedDb = computerSyncService.downloadLatestDatabase(context, confirmedManifest);
+            ProductImportResult result = importProducts(
+                    context,
+                    Uri.fromFile(downloadedDb),
+                    ImportFormat.MINGSHENG_DB,
+                    confirmedManifest.fileName()
+            );
+            computerSyncService.markSynced(context, confirmedManifest);
+            return result;
+        } catch (ProductImportException ex) {
+            throw ex;
+        } catch (ComputerSyncException ex) {
+            throw new ProductImportException(ex.getMessage(), ex);
+        } catch (Exception ex) {
+            throw new ProductImportException("电脑同步失败", ex);
+        } finally {
+            if (downloadedDb != null && downloadedDb.exists()) {
+                downloadedDb.delete();
+            }
+        }
     }
 
     private ProductImportResult importMingshengDb(Context context, Uri uri) throws ProductImportException {

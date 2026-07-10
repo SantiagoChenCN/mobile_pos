@@ -1,5 +1,6 @@
 package com.espsa.mobilepos.ui.screens;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.view.View;
@@ -12,7 +13,12 @@ import android.widget.Toast;
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ImportGateway;
 import com.espsa.mobilepos.app.ProductStoreException;
+import com.espsa.mobilepos.app.ScanGateway;
+import com.espsa.mobilepos.app.sync.ComputerSyncConfig;
+import com.espsa.mobilepos.app.sync.ComputerSyncManifest;
 import com.espsa.mobilepos.core.importer.ImportFormat;
+import com.espsa.mobilepos.core.importer.ProductImportException;
+import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.core.library.ImportSnapshotInfo;
 import com.espsa.mobilepos.core.library.ProductLibraryMetadata;
 import com.espsa.mobilepos.ui.AppLanguage;
@@ -27,6 +33,7 @@ public final class ImportScreen {
     private final AppServices services;
     private final AppLanguage language;
     private final ImportGateway importGateway;
+    private final ScanGateway scanGateway;
     private final Runnable refresh;
 
     public ImportScreen(
@@ -34,12 +41,14 @@ public final class ImportScreen {
             AppServices services,
             AppLanguage language,
             ImportGateway importGateway,
+            ScanGateway scanGateway,
             Runnable refresh
     ) {
         this.context = context;
         this.services = services;
         this.language = language;
         this.importGateway = importGateway;
+        this.scanGateway = scanGateway;
         this.refresh = refresh;
     }
 
@@ -65,16 +74,36 @@ public final class ImportScreen {
                 UiText.choose(language, "适合包含 barcode、name、price 字段的商品表。", "Para tablas con campos barcode, name y price."),
                 UiText.choose(language, "选择 .csv 文件", "Elegir archivo .csv")
         ), Views.cardParams(context));
+        page.addView(computerSyncCard(), Views.cardParams(context));
         page.addView(recentSnapshotsCard(), Views.cardParams(context));
         scroll.addView(page);
         return scroll;
     }
 
+    public void addScannedBarcode(String value) {
+        try {
+            ComputerSyncConfig config = services.computerSync().configureFromSetupUri(context, value);
+            Toast.makeText(context, UiText.choose(language, "电脑同步配置已保存", "Configuracion guardada"), Toast.LENGTH_SHORT).show();
+            runBackground(
+                    null,
+                    "",
+                    () -> services.computerSync().testConnection(context),
+                    ok -> {
+                        showMessage(
+                                UiText.choose(language, "连接成功", "Conexion correcta"),
+                                config.baseUrl()
+                        );
+                        refresh.run();
+                    }
+            );
+        } catch (Exception ex) {
+            showError(ex.getMessage());
+        }
+    }
+
     private View currentLibraryPanel() {
         LinearLayout panel = Views.card(context);
-        TextView heading = Views.text(context, UiText.choose(language, "当前商品库", "Productos actuales"), 18, StyleGuide.INK);
-        heading.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        panel.addView(heading, Views.matchWrap());
+        addCardTitle(panel, UiText.choose(language, "当前商品库", "Productos actuales"));
         try {
             ProductLibraryMetadata metadata = services.productLibrary().metadata();
             panel.addView(info(UiText.choose(language, "当前商品数", "Productos actuales"), Integer.toString(services.catalog().productCount())));
@@ -103,10 +132,128 @@ public final class ImportScreen {
         );
     }
 
+    private View computerSyncCard() {
+        LinearLayout card = Views.card(context);
+        addCardTitle(card, UiText.choose(language, "电脑同步", "Sincronizacion con PC"));
+
+        TextView description = Views.text(
+                context,
+                UiText.choose(
+                        language,
+                        "从收银电脑同步工具获取最新鸣盛数据库副本。同步前会确认，不会自动覆盖商品库。",
+                        "Obtiene la ultima copia Ming Sheng desde la herramienta de PC. Siempre pide confirmacion antes de importar."
+                ),
+                14,
+                StyleGuide.MUTED
+        );
+        description.setSingleLine(false);
+        description.setPadding(0, Views.dp(context, 6), 0, Views.dp(context, 8));
+        card.addView(description, Views.matchWrap());
+
+        ComputerSyncConfig config = services.computerSync().config(context);
+        card.addView(info(UiText.choose(language, "状态", "Estado"), config.configured()
+                ? UiText.choose(language, "已配置", "Configurado")
+                : UiText.choose(language, "未配置", "Sin configurar")));
+        card.addView(info(UiText.choose(language, "地址", "Direccion"), config.configured() ? config.baseUrl() : "-"));
+        card.addView(info(UiText.choose(language, "上次检查", "Ultima revision"), emptyText(config.lastCheckedAt())));
+        card.addView(info(UiText.choose(language, "上次同步", "Ultima sync"), emptyText(config.lastSyncedAt())));
+
+        Button scan = Views.button(context, UiText.choose(language, "扫码连接电脑工具", "Escanear herramienta de PC"));
+        scan.setOnClickListener(v -> scanGateway.requestBarcodeScan());
+        card.addView(scan, Views.matchWrap());
+
+        Button test = Views.button(context, UiText.choose(language, "测试连接", "Probar conexion"));
+        test.setOnClickListener(v -> runBackground(
+                test,
+                UiText.choose(language, "测试中...", "Probando..."),
+                () -> services.computerSync().testConnection(context),
+                ok -> showMessage(UiText.choose(language, "连接成功", "Conexion correcta"), services.computerSync().config(context).baseUrl())
+        ));
+        card.addView(test, Views.matchWrap());
+
+        Button check = Views.button(context, UiText.choose(language, "检查新版本", "Buscar nueva version"));
+        check.setOnClickListener(v -> runBackground(
+                check,
+                UiText.choose(language, "检查中...", "Revisando..."),
+                () -> services.computerSync().checkManifest(context),
+                manifest -> handleManifest(manifest, false)
+        ));
+        card.addView(check, Views.matchWrap());
+
+        Button sync = Views.button(context, UiText.choose(language, "立即同步", "Sincronizar ahora"));
+        sync.setOnClickListener(v -> runBackground(
+                sync,
+                UiText.choose(language, "检查中...", "Revisando..."),
+                () -> services.computerSync().checkManifest(context),
+                manifest -> handleManifest(manifest, true)
+        ));
+        card.addView(sync, Views.matchWrap());
+        return card;
+    }
+
     private View recentSnapshotsCard() {
         LinearLayout card = Views.card(context);
         addSnapshotRows(card);
         return card;
+    }
+
+    private void handleManifest(ComputerSyncManifest manifest, boolean syncWhenNew) {
+        if (manifest == null || !manifest.ok()) {
+            showError(manifest == null ? UiText.choose(language, "电脑端未返回 manifest", "La PC no devolvio manifest") : manifest.error());
+            return;
+        }
+        if (!services.computerSync().hasNewVersion(context, manifest)) {
+            showManifestMessage(UiText.choose(language, "已是最新版本", "Ya esta actualizado"), manifest);
+            return;
+        }
+        if (syncWhenNew) {
+            confirmSync(manifest);
+        } else {
+            showManifestMessage(UiText.choose(language, "发现新版本", "Nueva version disponible"), manifest);
+        }
+    }
+
+    private void confirmSync(ComputerSyncManifest manifest) {
+        String message = manifestSummary(manifest)
+                + "\n\n"
+                + UiText.choose(language, "导入后会替换当前手机商品库。", "La importacion reemplazara los productos actuales.");
+        new AlertDialog.Builder(context)
+                .setTitle(UiText.choose(language, "导入电脑商品库？", "Importar productos desde PC?"))
+                .setMessage(message)
+                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
+                .setPositiveButton(UiText.choose(language, "导入", "Importar"), (dialog, which) -> {
+                    if (hasManualChanges()) {
+                        confirmSyncWithLocalChanges(manifest);
+                    } else {
+                        syncNow(manifest);
+                    }
+                })
+                .show();
+    }
+
+    private void confirmSyncWithLocalChanges(ComputerSyncManifest manifest) {
+        new AlertDialog.Builder(context)
+                .setTitle(UiText.choose(language, "确认覆盖本地修改", "Confirmar reemplazo local"))
+                .setMessage(UiText.choose(
+                        language,
+                        "手机上有本地手动修改或自建商品。继续导入会覆盖这些修改。",
+                        "Hay cambios locales o productos creados en el telefono. La importacion los reemplazara."
+                ))
+                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
+                .setPositiveButton(UiText.choose(language, "继续覆盖并导入", "Reemplazar e importar"), (dialog, which) -> syncNow(manifest))
+                .show();
+    }
+
+    private void syncNow(ComputerSyncManifest manifest) {
+        runBackground(
+                null,
+                "",
+                () -> services.syncProductsFromComputer(context, manifest),
+                result -> {
+                    showImportSuccess(result);
+                    refresh.run();
+                }
+        );
     }
 
     private void addSnapshotRows(LinearLayout list) {
@@ -156,14 +303,7 @@ public final class ImportScreen {
     }
 
     private View info(String label, String value) {
-        LinearLayout row = Views.vertical(context);
-        row.setPadding(0, 8, 0, 8);
-        TextView labelView = Views.text(context, label, 13, StyleGuide.MUTED);
-        row.addView(labelView, Views.matchWrap());
-        TextView valueView = Views.text(context, value, 20, StyleGuide.INK);
-        valueView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        row.addView(valueView, Views.matchWrap());
-        return row;
+        return Views.infoBlock(context, label, value);
     }
 
     private void confirmImport(ImportFormat format, String title) {
@@ -202,6 +342,94 @@ public final class ImportScreen {
         }
     }
 
+    private boolean hasManualChanges() {
+        try {
+            return services.productLibrary().metadata().manuallyModified();
+        } catch (ProductStoreException ex) {
+            return false;
+        }
+    }
+
+    private void showManifestMessage(String title, ComputerSyncManifest manifest) {
+        showMessage(title, manifestSummary(manifest));
+    }
+
+    private String manifestSummary(ComputerSyncManifest manifest) {
+        return UiText.choose(language, "文件", "Archivo") + ": " + emptyText(manifest.fileName())
+                + "\n" + UiText.choose(language, "时间", "Fecha") + ": " + emptyText(manifest.createdAt())
+                + "\n" + UiText.choose(language, "大小", "Tamano") + ": " + formatBytes(manifest.sizeBytes())
+                + "\nSHA-256: " + shortHash(manifest.sha256());
+    }
+
+    private void showImportSuccess(ProductImportResult result) {
+        String message = UiText.choose(language, "商品", "Productos") + ": " + result.productCount()
+                + "\n" + UiText.choose(language, "促销", "Promociones") + ": " + result.promotionCount()
+                + "\n" + UiText.choose(language, "警告", "Advertencias") + ": " + result.warnings().size()
+                + "\n" + UiText.choose(language, "文件", "Archivo") + ": " + emptyText(result.sourceFileName());
+        showMessage(UiText.choose(language, "同步完成", "Sincronizacion completa"), message);
+    }
+
+    private void showMessage(String title, String message) {
+        new AlertDialog.Builder(context)
+                .setTitle(title)
+                .setMessage(emptyText(message))
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void showError(String message) {
+        new AlertDialog.Builder(context)
+                .setTitle(UiText.choose(language, "电脑同步失败", "Error de sincronizacion"))
+                .setMessage(emptyText(message))
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private <T> void runBackground(Button button, String loadingLabel, SyncWork<T> work, SyncSuccess<T> success) {
+        String originalLabel = button == null ? "" : button.getText().toString();
+        if (button != null) {
+            button.setEnabled(false);
+            if (loadingLabel != null && !loadingLabel.trim().isEmpty()) {
+                button.setText(loadingLabel);
+            }
+        }
+        new Thread(() -> {
+            try {
+                T result = work.run();
+                runOnUiThread(() -> {
+                    restoreButton(button, originalLabel);
+                    success.onSuccess(result);
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> {
+                    restoreButton(button, originalLabel);
+                    showError(ex.getMessage());
+                });
+            }
+        }).start();
+    }
+
+    private void restoreButton(Button button, String label) {
+        if (button != null) {
+            button.setEnabled(true);
+            button.setText(label);
+        }
+    }
+
+    private void runOnUiThread(Runnable action) {
+        if (context instanceof Activity) {
+            ((Activity) context).runOnUiThread(action);
+        } else {
+            action.run();
+        }
+    }
+
+    private void addCardTitle(LinearLayout card, String title) {
+        TextView titleView = Views.text(context, title, 18, StyleGuide.INK);
+        titleView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        card.addView(titleView, Views.matchWrap());
+    }
+
     private String emptyText(String value) {
         return value == null || value.trim().isEmpty() ? "-" : value.trim();
     }
@@ -216,5 +444,34 @@ public final class ImportScreen {
             builder.append(extensions[i]);
         }
         return builder.toString();
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes <= 0) {
+            return "-";
+        }
+        if (bytes >= 1024L * 1024L) {
+            return (bytes / (1024L * 1024L)) + " MB";
+        }
+        if (bytes >= 1024L) {
+            return (bytes / 1024L) + " KB";
+        }
+        return bytes + " B";
+    }
+
+    private String shortHash(String hash) {
+        if (hash == null || hash.trim().isEmpty()) {
+            return "-";
+        }
+        String clean = hash.trim();
+        return clean.length() <= 12 ? clean : clean.substring(0, 12) + "...";
+    }
+
+    private interface SyncWork<T> {
+        T run() throws Exception;
+    }
+
+    private interface SyncSuccess<T> {
+        void onSuccess(T result);
     }
 }

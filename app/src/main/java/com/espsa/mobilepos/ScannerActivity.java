@@ -87,7 +87,8 @@ public final class ScannerActivity extends Activity {
                 BarcodeFormat.UPC_E,
                 BarcodeFormat.CODE_128,
                 BarcodeFormat.CODE_39,
-                BarcodeFormat.ITF
+                BarcodeFormat.ITF,
+                BarcodeFormat.QR_CODE
         );
     }
 
@@ -156,4 +157,3 @@ public final class ScannerActivity extends Activity {
         return getResources().getDimensionPixelSize(resourceId);
     }
 }
-

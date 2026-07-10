@@ -213,4 +213,21 @@
 - 本轮修复闭环包括：HTTP 绑定 `selectedHost`、源 DB 复制后二次稳定校验、manifest/latest hash/size 下载前校验、共享发布锁消除下载/发布竞态、源码/打包自启动命令区分、服务绑定/二维码状态 UI 显示、PySide6 图标兼容修复。
 - 验证结果：`python -m unittest discover -s tests` 通过，`20` 个测试 OK；关键源码 `py_compile` 通过；offscreen GUI smoke test 输出 `service_running=True`、`qr_status=可用`、`qr_pixmap_null=False`。
 - 说明：当前 smoke test 已验证主窗口构建、HTTP 自动启动和二维码渲染；用户已人工确认真实 Windows 窗口、二维码、关闭最小化到托盘、托盘菜单和退出流程均正常。
-- 下一步可以进入手机端接收/扫码/下载/校验/导入流程开发。
+- 手机端接收/扫码/下载/校验/导入流程已在 2026-07-10 完成开发与修复验收，下一步进入电脑端 + 手机端真实联调。
+
+## 2026-07-10 手机端电脑同步接入与修复验收完成
+
+- 已新增手机端 `app/sync` 模块：`ComputerSyncConfig`、`ComputerSyncStore`、`ComputerSyncClient`、`ComputerSyncManifest`、`ComputerSyncService`、`ComputerSyncException`。
+- 手机端已支持扫描电脑端二维码 `mobilepos-sync://setup?host=...&port=...&token=...`，保存 host、port、token 到本机 `SharedPreferences`。
+- 导入页新增“电脑同步”卡片：显示配置状态、电脑地址、上次检查、上次同步；支持扫码连接、测试连接、检查新版本、立即同步。
+- 手机端网络同步路径已接入电脑端契约：`/health` 测试连接、`/manifest.json` 检查备份 manifest、`/latest.db` 下载数据库副本，所有请求带 token。
+- 下载后会计算本地文件 SHA-256，并与 manifest 的 `sha256` 比对；hash 不一致会删除临时文件并拒绝导入。
+- 同步导入复用既有鸣盛 `.db` 导入链路和 `ProductLibraryService` 保存逻辑，导入成功后更新本地商品库、快照和 lastSynced hash。
+- UI 已保留导入前确认；如果手机本地存在手动修改或自建商品，会进行二次确认后才覆盖。
+- 验收发现并修复两项流程问题：
+  - “检查新版本”按钮原本也会进入导入确认；现已改为只显示“已是最新版本”或“发现新版本”，只有“立即同步”才进入导入确认。
+  - 用户确认的 manifest 原本可能在实际导入前被重新请求替换；现已改为将同一个 `ComputerSyncManifest` 从确认弹窗传递到 `syncNow(manifest)` 和 `AppServices.syncProductsFromComputer(context, confirmedManifest)`，下载、导入和 `markSynced` 均使用已确认 manifest。
+- 权限与扫码：`AndroidManifest.xml` 已包含 `INTERNET` 和 `CAMERA`；扫码器已支持 `QR_CODE`。
+- 验证结果：`CoreSmokeTest` 通过；完整 debug APK Gradle 构建成功。
+- 最新验收 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `951496 bytes`，构建时间 `2026-07-10 13:51:40`。
+- 后续待做：使用真实手机和已确认通过的电脑端 `pc-sync-tool` 做端到端联调，覆盖扫码配置、连接测试、检查新版本、立即同步、hash 校验、导入覆盖确认、本地修改二次确认和同步后商品搜索/收银可用性。

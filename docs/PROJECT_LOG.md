@@ -242,3 +242,73 @@
 - 发布边界：
   - 发布仓库只同步源码、计划文档、进度文档和 APK。
   - 不提交真实经营数据库、商品导出表、`python_envs` 虚拟环境、`__pycache__` 或 `.pyc` 缓存文件。
+
+## 2026-07-10
+
+### 手机端电脑同步接入验收
+
+- 新增手机端同步模块：
+  - `ComputerSyncConfig`：保存电脑端 host、port、token、lastSeen/lastSynced hash 和时间。
+  - `ComputerSyncStore`：使用 `SharedPreferences` 持久化同步配置。
+  - `ComputerSyncClient`：通过 `HttpURLConnection` 调用电脑端 `/health`、`/manifest.json`、`/latest.db`，请求均带 token。
+  - `ComputerSyncManifest`：解析电脑端 manifest，包括 `ok`、`error`、`fileName`、`sizeBytes`、`sha256`、`createdAt`、`downloadPath`。
+  - `ComputerSyncService`：解析 `mobilepos-sync://setup?...` 二维码、测试连接、检查 manifest、下载数据库、计算 SHA-256、标记已同步。
+- UI 接入：
+  - 导入页新增“电脑同步”卡片，显示配置状态、电脑地址、上次检查和上次同步。
+  - 支持扫码连接电脑工具，扫码内容为电脑端二维码生成的 `mobilepos-sync://setup?host=...&port=...&token=...`。
+  - 支持测试连接、检查新版本、立即同步。
+  - 同步前弹出 manifest 摘要确认；本地存在手动修改或自建商品时，继续弹出二次覆盖确认。
+- 业务接入：
+  - `AppServices.syncProductsFromComputer(...)` 下载电脑端 latest `.db` 后，复用现有鸣盛 `.db` 导入和商品库保存逻辑。
+  - 下载文件会在导入前计算 SHA-256 并与 manifest 比对，不一致时删除临时文件并拒绝导入。
+  - 导入成功后更新商品库、导入快照、metadata，并记录 lastSynced hash。
+- 权限和扫码：
+  - `AndroidManifest.xml` 已加入 `INTERNET` 权限。
+  - 既有扫码器已扩展/确认支持 `QR_CODE`。
+- 首轮验收发现：
+  - 问题 1：用户确认的 manifest 和实际导入的 manifest 可能不是同一个。原因是确认弹窗展示 manifest 后，执行同步时 `AppServices.syncProductsFromComputer(context)` 会重新 `checkManifest()`。
+  - 问题 2：“检查新版本”按钮也会进入导入确认。原因是 `ImportScreen.handleManifest(manifest, syncWhenNew)` 没有使用 `syncWhenNew` 参数。
+- 首轮验收结果：
+  - `CoreSmokeTest` 通过。
+  - 完整 debug APK Gradle 构建成功。
+  - APK：`E:\AndroidEmergencyPos\app\build\outputs\apk\debug\app-debug.apk`，大小 `951268 bytes`。
+
+### 手机端电脑同步流程修复验收
+
+- 修复“确认的 manifest 与实际导入 manifest 不一致”：
+  - `ImportScreen.confirmSync(manifest)`、`confirmSyncWithLocalChanges(manifest)`、`syncNow(manifest)` 保持传递同一个 `ComputerSyncManifest`。
+  - `AppServices` 新增 `syncProductsFromComputer(Context context, ComputerSyncManifest confirmedManifest)`。
+  - 下载、导入和 `markSynced` 均使用用户已确认的 `confirmedManifest`。
+  - 保留无参 `syncProductsFromComputer(context)` 作为便捷入口，但导入页确认流程不再使用无参入口。
+- 修复“检查新版本会触发导入确认”：
+  - `handleManifest(manifest, false)` 现在只显示“已是最新版本”或“发现新版本”。
+  - `handleManifest(manifest, true)` 才进入 `confirmSync(manifest)`。
+- 保持原有保护：
+  - 导入前确认仍保留。
+  - 本地手动修改/自建商品二次确认仍保留。
+  - SHA-256 校验仍由 `ComputerSyncService.downloadLatestDatabase(...)` 执行。
+- 回归验证：
+  - `CoreSmokeTest` 通过。
+  - 已同步源码到 `E:\AndroidEmergencyPos` ASCII 构建副本。
+  - 完整 debug APK Gradle 构建成功：`:app:assembleDebug BUILD SUCCESSFUL`。
+  - 最新 APK：`E:\AndroidEmergencyPos\app\build\outputs\apk\debug\app-debug.apk`。
+  - 发布/本地 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`。
+  - APK 大小：`951496 bytes`。
+  - 构建时间：`2026-07-10 13:51:40`。
+- 结论：
+  - 手机端电脑同步开发和本轮修复已通过代码级验收与完整 APK 构建。
+  - 下一步需要做电脑端 `pc-sync-tool` + 手机 App 的真实端到端联调：扫码配置、连接测试、检查新版本、立即同步、hash 校验、导入覆盖确认、本地修改二次确认和导入后商品搜索/收银验证。
+
+### 手机端电脑同步发布同步
+
+- 本轮同步内容：
+  - 同步 Android 手机端电脑同步接入源码到 GitHub 发布仓库。
+  - 同步最新 debug APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `951496 bytes`。
+  - 同步 `docs/PROJECT_STATUS.md` 和 `docs/PROJECT_LOG.md` 的 2026-07-10 验收记录。
+- 回归验证：
+  - 已同步源码到 `E:\AndroidEmergencyPos` 构建副本。
+  - 完整 debug APK Gradle 构建成功。
+  - `CoreSmokeTest` 通过。
+  - 电脑端 `pc-sync-tool` 20 个单测通过，`python -m compileall src tests` 通过。
+- 发布边界：
+  - 不提交真实经营数据库、商品导出表、`python_envs` 虚拟环境、Gradle build 目录、Python 缓存或 `.pyc` 文件。
