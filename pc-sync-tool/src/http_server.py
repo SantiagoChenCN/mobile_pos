@@ -10,11 +10,13 @@ from config import SyncConfig
 from event_log import EventLog
 from file_hash import sha256_file
 from manifest import no_backup_manifest, read_manifest
+from network import is_phone_connectable_host, preferred_lan_host
 from paths import AppPaths
 from publish_lock import publish_lock_for
 
 
 APP_VERSION = "1.0"
+HTTP_BIND_HOST = "0.0.0.0"
 
 
 class SyncHttpService:
@@ -27,7 +29,7 @@ class SyncHttpService:
     ):
         self.paths = paths
         self.config = config
-        self.bind_host = bind_host or config.selected_host or "0.0.0.0"
+        self.bind_host = bind_host or HTTP_BIND_HOST
         self.event_log = event_log or EventLog(paths.event_log_file)
         self.publish_lock = publish_lock_for(paths)
         self._server: Optional[ThreadingHTTPServer] = None
@@ -76,15 +78,17 @@ class SyncHttpService:
         query = parse_qs(parsed.query)
         token = query.get("token", [""])[0]
         if token != self.config.token:
+            self._log("HTTP request rejected: invalid token")
             self._send_text(handler, 403, "Forbidden")
             return
 
         if parsed.path == "/health":
+            self._log(f"HTTP /health success from {handler.client_address[0]}")
             self._send_json(handler, 200, {
                 "ok": True,
                 "app": "MobilePosSync",
                 "version": APP_VERSION,
-                "host": self.config.selected_host,
+                "host": self._health_host(),
                 "port": self.actual_port,
             })
             return
@@ -150,6 +154,12 @@ class SyncHttpService:
             "sha256": expected_sha,
             "sizeBytes": actual_size,
         }
+
+    def _health_host(self) -> str:
+        selected_host = str(self.config.selected_host or "").strip()
+        if is_phone_connectable_host(selected_host):
+            return selected_host
+        return preferred_lan_host() or ""
 
     def _send_json(self, handler: BaseHTTPRequestHandler, status: int, data) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")

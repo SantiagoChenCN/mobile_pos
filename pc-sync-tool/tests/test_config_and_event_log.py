@@ -9,9 +9,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from config import load_config, save_config
+from connection_info import connection_summary
 from event_log import EventLog
 from paths import AppPaths
-from qr_code import setup_url
 from startup import runtime_startup_command, startup_command
 
 
@@ -29,17 +29,17 @@ class ConfigAndEventLogTest(unittest.TestCase):
             saved = json.loads(paths.config_file.read_text(encoding="utf-8"))
             self.assertEqual(config.token, saved["token"])
 
-    def test_save_config_and_setup_url(self):
+    def test_save_config_and_connection_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = AppPaths(Path(tmp) / "roaming", Path(tmp) / "local")
             config = load_config(paths)
             save_config(paths, config)
 
-            url = setup_url(config)
+            summary = connection_summary(config)
 
-            self.assertIn("mobilepos-sync://setup?", url)
-            self.assertIn("port=8765", url)
-            self.assertIn("token=" + config.token, url)
+            self.assertIn("电脑IP：", summary)
+            self.assertIn("端口：8765", summary)
+            self.assertIn("Token：" + config.token, summary)
 
     def test_event_log_keeps_recent_200_entries(self):
         with tempfile.TemporaryDirectory() as tmp:

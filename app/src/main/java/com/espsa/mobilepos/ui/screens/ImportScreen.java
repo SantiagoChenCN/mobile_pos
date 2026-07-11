@@ -3,8 +3,10 @@ package com.espsa.mobilepos.ui.screens;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -13,11 +15,11 @@ import android.widget.Toast;
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ImportGateway;
 import com.espsa.mobilepos.app.ProductStoreException;
-import com.espsa.mobilepos.app.ScanGateway;
 import com.espsa.mobilepos.app.sync.ComputerSyncConfig;
+import com.espsa.mobilepos.app.sync.ComputerSyncException;
+import com.espsa.mobilepos.app.sync.ComputerSyncHealth;
 import com.espsa.mobilepos.app.sync.ComputerSyncManifest;
 import com.espsa.mobilepos.core.importer.ImportFormat;
-import com.espsa.mobilepos.core.importer.ProductImportException;
 import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.core.library.ImportSnapshotInfo;
 import com.espsa.mobilepos.core.library.ProductLibraryMetadata;
@@ -25,35 +27,51 @@ import com.espsa.mobilepos.ui.AppLanguage;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
+import com.espsa.mobilepos.ui.sync.ComputerSyncErrorPresentation;
+import com.espsa.mobilepos.ui.sync.ComputerSyncErrorPresenter;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ImportScreen {
     private final Context context;
     private final AppServices services;
     private final AppLanguage language;
     private final ImportGateway importGateway;
-    private final ScanGateway scanGateway;
     private final Runnable refresh;
+    private final AtomicInteger taskGeneration = new AtomicInteger();
+    private final Set<Thread> runningTasks = ConcurrentHashMap.newKeySet();
+    private volatile boolean pageAvailable = true;
+    private volatile AlertDialog manualSyncDialog;
 
     public ImportScreen(
             Context context,
             AppServices services,
             AppLanguage language,
             ImportGateway importGateway,
-            ScanGateway scanGateway,
             Runnable refresh
     ) {
         this.context = context;
         this.services = services;
         this.language = language;
         this.importGateway = importGateway;
-        this.scanGateway = scanGateway;
         this.refresh = refresh;
     }
 
     public View render() {
         ScrollView scroll = new ScrollView(context);
+        scroll.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(View view) {
+            }
+
+            @Override
+            public void onViewDetachedFromWindow(View view) {
+                dispose();
+            }
+        });
         LinearLayout page = Views.vertical(context);
         page.setPadding(16, 8, 16, 16);
 
@@ -78,27 +96,6 @@ public final class ImportScreen {
         page.addView(recentSnapshotsCard(), Views.cardParams(context));
         scroll.addView(page);
         return scroll;
-    }
-
-    public void addScannedBarcode(String value) {
-        try {
-            ComputerSyncConfig config = services.computerSync().configureFromSetupUri(context, value);
-            Toast.makeText(context, UiText.choose(language, "电脑同步配置已保存", "Configuracion guardada"), Toast.LENGTH_SHORT).show();
-            runBackground(
-                    null,
-                    "",
-                    () -> services.computerSync().testConnection(context),
-                    ok -> {
-                        showMessage(
-                                UiText.choose(language, "连接成功", "Conexion correcta"),
-                                config.baseUrl()
-                        );
-                        refresh.run();
-                    }
-            );
-        } catch (Exception ex) {
-            showError(ex.getMessage());
-        }
     }
 
     private View currentLibraryPanel() {
@@ -155,19 +152,22 @@ public final class ImportScreen {
                 ? UiText.choose(language, "已配置", "Configurado")
                 : UiText.choose(language, "未配置", "Sin configurar")));
         card.addView(info(UiText.choose(language, "地址", "Direccion"), config.configured() ? config.baseUrl() : "-"));
+        card.addView(info(UiText.choose(language, "Token", "Token"), config.configured()
+                ? UiText.choose(language, "已设置", "Configurado")
+                : "-"));
         card.addView(info(UiText.choose(language, "上次检查", "Ultima revision"), emptyText(config.lastCheckedAt())));
         card.addView(info(UiText.choose(language, "上次同步", "Ultima sync"), emptyText(config.lastSyncedAt())));
 
-        Button scan = Views.button(context, UiText.choose(language, "扫码连接电脑工具", "Escanear herramienta de PC"));
-        scan.setOnClickListener(v -> scanGateway.requestBarcodeScan());
-        card.addView(scan, Views.matchWrap());
+        Button manual = Views.button(context, UiText.choose(language, "手动连接电脑工具", "Conectar PC manualmente"));
+        manual.setOnClickListener(v -> showManualComputerSyncDialog());
+        card.addView(manual, Views.matchWrap());
 
         Button test = Views.button(context, UiText.choose(language, "测试连接", "Probar conexion"));
         test.setOnClickListener(v -> runBackground(
                 test,
                 UiText.choose(language, "测试中...", "Probando..."),
                 () -> services.computerSync().testConnection(context),
-                ok -> showMessage(UiText.choose(language, "连接成功", "Conexion correcta"), services.computerSync().config(context).baseUrl())
+                this::showConnectionSuccess
         ));
         card.addView(test, Views.matchWrap());
 
@@ -189,6 +189,113 @@ public final class ImportScreen {
         ));
         card.addView(sync, Views.matchWrap());
         return card;
+    }
+
+    private void showManualComputerSyncDialog() {
+        ComputerSyncConfig config = services.computerSync().config(context);
+        EditText hostInput = Views.editText(context);
+        hostInput.setSingleLine(true);
+        hostInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        hostInput.setHint(UiText.choose(language, "例如 192.168.1.35", "Ej. 192.168.1.35"));
+        hostInput.setText(config.host());
+
+        EditText portInput = Views.editText(context);
+        portInput.setSingleLine(true);
+        portInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        portInput.setHint("8765");
+        portInput.setText(Integer.toString(config.port() > 0 ? config.port() : 8765));
+
+        EditText tokenInput = Views.editText(context);
+        tokenInput.setSingleLine(true);
+        tokenInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        tokenInput.setHint("Token");
+        tokenInput.setText(config.token());
+
+        View form = manualSyncForm(hostInput, portInput, tokenInput);
+        AlertDialog dialog = new AlertDialog.Builder(context)
+                .setTitle(UiText.choose(language, "手动连接电脑工具", "Conectar PC manualmente"))
+                .setView(form)
+                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
+                .setPositiveButton(UiText.choose(language, "保存并测试连接", "Guardar y probar"), null)
+                .create();
+        manualSyncDialog = dialog;
+        dialog.setOnDismissListener(d -> manualSyncDialog = null);
+        dialog.setOnShowListener(d -> {
+            Button saveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            saveButton.setOnClickListener(v -> saveAndTestManualSync(hostInput, portInput, tokenInput, dialog, saveButton));
+        });
+        dialog.show();
+    }
+
+    private View manualSyncForm(EditText hostInput, EditText portInput, EditText tokenInput) {
+        LinearLayout form = Views.vertical(context);
+        int verticalGap = Views.dp(context, 10);
+        form.setPadding(Views.dp(context, 4), Views.dp(context, 4), Views.dp(context, 4), 0);
+        form.addView(field(UiText.choose(language, "电脑IP", "IP de PC"), hostInput), Views.matchWrap());
+        form.addView(field(UiText.choose(language, "端口", "Puerto"), portInput), fieldSpacing(verticalGap));
+        form.addView(field("Token", tokenInput), fieldSpacing(verticalGap));
+        return form;
+    }
+
+    private View field(String label, EditText input) {
+        LinearLayout field = Views.vertical(context);
+        TextView labelView = Views.text(context, label, 13, StyleGuide.MUTED);
+        field.addView(labelView, Views.matchWrap());
+        field.addView(input, Views.matchWrap());
+        return field;
+    }
+
+    private LinearLayout.LayoutParams fieldSpacing(int topMargin) {
+        LinearLayout.LayoutParams params = Views.matchWrap();
+        params.setMargins(0, topMargin, 0, 0);
+        return params;
+    }
+
+    private void saveAndTestManualSync(
+            EditText hostInput,
+            EditText portInput,
+            EditText tokenInput,
+            AlertDialog dialog,
+            Button saveButton
+    ) {
+        String host = cleanInput(hostInput.getText().toString());
+        String token = cleanInput(tokenInput.getText().toString());
+        int port;
+        try {
+            port = parsePortInput(portInput.getText().toString());
+        } catch (Exception ex) {
+            showError(ex.getMessage());
+            return;
+        }
+        runBackground(
+                saveButton,
+                UiText.choose(language, "测试中...", "Probando..."),
+                () -> {
+                    services.computerSync().configureManual(context, host, port, token);
+                    return services.computerSync().testConnection(context);
+                },
+                health -> {
+                    dialog.dismiss();
+                    showConnectionSuccess(health);
+                    refresh.run();
+                }
+        );
+    }
+
+    private String cleanInput(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private int parsePortInput(String value) {
+        try {
+            int port = Integer.parseInt(cleanInput(value));
+            if (port <= 0 || port > 65535) {
+                throw new NumberFormatException("out of range");
+            }
+            return port;
+        } catch (Exception ex) {
+            throw new IllegalArgumentException(UiText.choose(language, "电脑同步端口无效", "Puerto de sincronizacion invalido"));
+        }
     }
 
     private View recentSnapshotsCard() {
@@ -369,6 +476,13 @@ public final class ImportScreen {
         showMessage(UiText.choose(language, "同步完成", "Sincronizacion completa"), message);
     }
 
+    private void showConnectionSuccess(ComputerSyncHealth health) {
+        String message = UiText.choose(language, "电脑 IP", "IP de PC") + ": " + emptyText(health.host())
+                + "\n" + UiText.choose(language, "端口", "Puerto") + ": " + health.port()
+                + "\n" + UiText.choose(language, "电脑工具版本", "Version de la herramienta") + ": " + emptyText(health.version());
+        showMessage(UiText.choose(language, "连接成功", "Conexion correcta"), message);
+    }
+
     private void showMessage(String title, String message) {
         new AlertDialog.Builder(context)
                 .setTitle(title)
@@ -385,7 +499,35 @@ public final class ImportScreen {
                 .show();
     }
 
+    private void showSyncError(Exception exception) {
+        ComputerSyncException syncException = findComputerSyncException(exception);
+        if (syncException == null) {
+            showError(exception == null ? "" : exception.getMessage());
+            return;
+        }
+        ComputerSyncErrorPresentation presentation = ComputerSyncErrorPresenter.presentError(syncException, language);
+        showMessage(
+                presentation.title(),
+                presentation.message() + "\n\n" + presentation.suggestion()
+        );
+    }
+
+    private ComputerSyncException findComputerSyncException(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof ComputerSyncException) {
+                return (ComputerSyncException) current;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
     private <T> void runBackground(Button button, String loadingLabel, SyncWork<T> work, SyncSuccess<T> success) {
+        int generation = taskGeneration.get();
+        if (!isTaskCurrent(generation)) {
+            return;
+        }
         String originalLabel = button == null ? "" : button.getText().toString();
         if (button != null) {
             button.setEnabled(false);
@@ -393,20 +535,53 @@ public final class ImportScreen {
                 button.setText(loadingLabel);
             }
         }
-        new Thread(() -> {
+        Thread task = new Thread(() -> {
             try {
+                if (!isTaskCurrent(generation)) {
+                    return;
+                }
                 T result = work.run();
                 runOnUiThread(() -> {
+                    if (!isTaskCurrent(generation)) {
+                        return;
+                    }
                     restoreButton(button, originalLabel);
                     success.onSuccess(result);
                 });
             } catch (Exception ex) {
                 runOnUiThread(() -> {
+                    if (!isTaskCurrent(generation)) {
+                        return;
+                    }
                     restoreButton(button, originalLabel);
-                    showError(ex.getMessage());
+                    showSyncError(ex);
                 });
+            } finally {
+                runningTasks.remove(Thread.currentThread());
             }
-        }).start();
+        }, "computer-sync-task");
+        runningTasks.add(task);
+        task.start();
+    }
+
+    public void dispose() {
+        if (!pageAvailable) {
+            return;
+        }
+        pageAvailable = false;
+        taskGeneration.incrementAndGet();
+        AlertDialog dialog = manualSyncDialog;
+        if (dialog != null && dialog.isShowing()) {
+            dialog.dismiss();
+        }
+        for (Thread task : runningTasks) {
+            task.interrupt();
+        }
+        runningTasks.clear();
+    }
+
+    private boolean isTaskCurrent(int generation) {
+        return pageAvailable && taskGeneration.get() == generation;
     }
 
     private void restoreButton(Button button, String label) {

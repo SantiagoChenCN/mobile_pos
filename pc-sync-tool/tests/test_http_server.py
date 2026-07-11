@@ -35,23 +35,23 @@ class HttpServerTest(unittest.TestCase):
     def test_backup_and_http_share_publish_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = AppPaths(Path(tmp) / "roaming", Path(tmp) / "local")
-            config = SyncConfig(token="TOKEN", port=0, selected_host="127.0.0.1")
+            config = SyncConfig(token="TOKEN", port=0, selected_host="192.168.1.35")
             service = SyncHttpService(paths, config)
             worker = BackupWorker(paths, stability_seconds=0)
             self.assertIs(publish_lock_for(paths), service.publish_lock)
             self.assertIs(worker.publish_lock, service.publish_lock)
 
-    def test_default_bind_host_uses_selected_host(self):
+    def test_default_bind_host_listens_on_all_interfaces_and_advertises_selected_host(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = AppPaths(root / "roaming", root / "local")
-            config = SyncConfig(token="TOKEN", port=0, selected_host="127.0.0.1")
+            config = SyncConfig(token="TOKEN", port=0, selected_host="192.168.1.35")
             service = SyncHttpService(paths, config)
             service.start()
             try:
-                self.assertEqual("127.0.0.1", service.bind_host)
+                self.assertEqual("0.0.0.0", service.bind_host)
                 health = self.read_json(f"http://127.0.0.1:{service.actual_port}/health?token=TOKEN")
-                self.assertEqual("127.0.0.1", health["host"])
+                self.assertEqual("192.168.1.35", health["host"])
             finally:
                 service.stop()
 
@@ -92,6 +92,21 @@ class HttpServerTest(unittest.TestCase):
                     response.close()
             finally:
                 service.stop()
+
+    def test_health_never_returns_the_all_interfaces_bind_address(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = AppPaths(root / "roaming", root / "local")
+            config = SyncConfig(token="TOKEN", port=0, selected_host="0.0.0.0")
+            service = SyncHttpService(paths, config)
+            service.start()
+            try:
+                health = self.read_json(f"http://127.0.0.1:{service.actual_port}/health?token=TOKEN")
+            finally:
+                service.stop()
+
+            self.assertEqual("0.0.0.0", service.bind_host)
+            self.assertNotEqual("0.0.0.0", health["host"])
 
     def test_latest_download_waits_for_publish_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,6 +198,28 @@ class HttpServerTest(unittest.TestCase):
                 self.assertEqual("NO_BACKUP_READY", body["error"])
             finally:
                 service.stop()
+
+    def test_http_request_log_does_not_include_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = AppPaths(root / "roaming", root / "local")
+            config = SyncConfig(token="SECRET_TOKEN", port=0, selected_host="192.168.1.35")
+            service = SyncHttpService(paths, config)
+            service.start()
+            try:
+                base = f"http://127.0.0.1:{service.actual_port}"
+                self.read_json(base + "/health?token=SECRET_TOKEN")
+                with self.assertRaises(urllib.error.HTTPError) as context:
+                    urllib.request.urlopen(base + "/health?token=BAD_TOKEN", timeout=5)
+                context.exception.close()
+            finally:
+                service.stop()
+
+            messages = [entry["message"] for entry in service.event_log.read()]
+            self.assertIn("HTTP /health success from 127.0.0.1", messages)
+            self.assertIn("HTTP request rejected: invalid token", messages)
+            self.assertNotIn("SECRET_TOKEN", "\n".join(messages))
+            self.assertNotIn("BAD_TOKEN", "\n".join(messages))
 
     def read_json(self, url: str):
         response = urllib.request.urlopen(url, timeout=5)

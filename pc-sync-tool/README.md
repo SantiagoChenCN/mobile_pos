@@ -41,11 +41,13 @@ Run the backend HTTP service:
 python src\app.py --serve
 ```
 
-Print the phone setup URL:
+Print the phone connection information:
 
 ```powershell
-python src\app.py --print-setup-url
+python src\app.py --print-connection-info
 ```
+
+Enter the displayed IP, port, and Token manually in the phone app.
 
 ## Safety
 

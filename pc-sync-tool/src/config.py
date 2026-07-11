@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 
+from network import preferred_lan_host
 from paths import AppPaths
 
 
@@ -79,7 +80,7 @@ def generate_token(length: int = 8) -> str:
 
 
 def default_config() -> SyncConfig:
-    return SyncConfig(token=generate_token())
+    return SyncConfig(token=generate_token(), selected_host=preferred_lan_host() or "127.0.0.1")
 
 
 def load_config(paths: AppPaths) -> SyncConfig:

@@ -6,11 +6,11 @@ import sys
 import time
 
 from backup_worker import BackupWorker
+from connection_info import connection_summary
 from config import load_config
 from event_log import EventLog
-from http_server import SyncHttpService
+from http_server import HTTP_BIND_HOST, SyncHttpService
 from paths import AppPaths
-from qr_code import setup_url
 
 
 def main(argv=None) -> int:
@@ -24,7 +24,7 @@ def main(argv=None) -> int:
     parser.add_argument("--gui", action="store_true", help="Run the PySide6 desktop tool")
     parser.add_argument("--backup-once", action="store_true", help="Run one backup and exit")
     parser.add_argument("--serve", action="store_true", help="Run the HTTP service until interrupted")
-    parser.add_argument("--print-setup-url", action="store_true", help="Print the mobile setup URL")
+    parser.add_argument("--print-connection-info", action="store_true", help="Print IP, port, and token for manual mobile setup")
     args = parser.parse_args(argv)
 
     if args.gui:
@@ -36,8 +36,8 @@ def main(argv=None) -> int:
     config = load_config(paths)
     event_log = EventLog(paths.event_log_file)
 
-    if args.print_setup_url:
-        print(setup_url(config))
+    if args.print_connection_info:
+        print(connection_summary(config))
         return 0
 
     if args.backup_once:
@@ -46,7 +46,7 @@ def main(argv=None) -> int:
         return 0 if result.ok else 1
 
     if args.serve:
-        service = SyncHttpService(paths, config, bind_host=config.selected_host, event_log=event_log)
+        service = SyncHttpService(paths, config, bind_host=HTTP_BIND_HOST, event_log=event_log)
         service.start()
         stop = False
 

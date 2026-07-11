@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backup_worker import BackupResult, BackupWorker
+from connection_info import connection_summary, connection_info
 from config import SyncConfig, generate_token, load_config, save_config
 from event_log import EventLog
-from http_server import SyncHttpService
+from http_server import HTTP_BIND_HOST, SyncHttpService
 from manifest import no_backup_manifest, read_manifest
+from network_diagnostics import NetworkDiagnosticResult, diagnose_network
 from paths import AppPaths
-from qr_code import setup_url
 from source_locator import SourceDatabase, resolve_source
 from startup import StartupRegistrationError, set_enabled
 
@@ -36,7 +37,7 @@ class UiController:
     @property
     def actual_bind_host(self) -> str:
         if self.service is None:
-            return self.config.selected_host
+            return HTTP_BIND_HOST
         return self.service.bind_host
 
     def start_service(self) -> None:
@@ -45,7 +46,7 @@ class UiController:
         self.service = SyncHttpService(
             self.paths,
             self.config,
-            bind_host=self.config.selected_host,
+            bind_host=HTTP_BIND_HOST,
             event_log=self.event_log,
         )
         try:
@@ -107,22 +108,31 @@ class UiController:
     def detect_source(self) -> SourceDatabase:
         return resolve_source(self.config)
 
-    def setup_url(self) -> str:
-        return setup_url(self.config)
+    def connection_host(self) -> str:
+        return connection_info(self.config).host
+
+    def connection_port(self) -> int:
+        return connection_info(self.config).port
+
+    def connection_token(self) -> str:
+        return connection_info(self.config).token
+
+    def connection_summary(self) -> str:
+        return connection_summary(self.config)
 
     def service_binding_text(self) -> str:
         if self.service_running:
             return f"{self.actual_bind_host}:{self.actual_port}"
-        return f"未绑定（保存为 {self.config.selected_host}:{self.config.port}）"
+        return f"未绑定（启动后监听 {HTTP_BIND_HOST}:{self.config.port}）"
 
-    def qr_status_text(self) -> str:
-        qr_target = f"{self.config.selected_host}:{self.config.port}"
+    def connection_status_text(self) -> str:
+        configured_target = f"{self.connection_host()}:{self.connection_port()}"
         if not self.service_running:
-            return f"已生成，指向 {qr_target}；HTTP 未运行"
-        service_target = f"{self.actual_bind_host}:{self.actual_port}"
-        if service_target == qr_target:
-            return f"可用，指向 {qr_target}"
-        return f"需检查：二维码 {qr_target}，服务 {service_target}"
+            return "连接信息已生成，但 HTTP 服务未运行"
+        return f"可用，手机连接 {configured_target}"
+
+    def network_diagnostics(self) -> NetworkDiagnosticResult:
+        return diagnose_network(self.service, self.config)
 
     def read_manifest(self) -> Dict[str, Any]:
         if not self.paths.manifest_file.exists():

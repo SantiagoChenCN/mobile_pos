@@ -14,7 +14,7 @@ from ui.controller import UiController
 
 
 class UiControllerTest(unittest.TestCase):
-    def test_start_service_binds_selected_host(self):
+    def test_start_service_listens_on_all_interfaces(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = AppPaths(root / "roaming", root / "local")
@@ -24,9 +24,9 @@ class UiControllerTest(unittest.TestCase):
 
             controller.start_service()
             try:
-                self.assertEqual("127.0.0.1", controller.actual_bind_host)
-                self.assertEqual("127.0.0.1", controller.service.bind_host)
-                self.assertIn("127.0.0.1:", controller.service_binding_text())
+                self.assertEqual("0.0.0.0", controller.actual_bind_host)
+                self.assertEqual("0.0.0.0", controller.service.bind_host)
+                self.assertIn("0.0.0.0:", controller.service_binding_text())
             finally:
                 controller.stop_service()
 

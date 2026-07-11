@@ -1,7 +1,6 @@
 package com.espsa.mobilepos.app.sync;
 
 import android.content.Context;
-import android.net.Uri;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -10,7 +9,9 @@ import java.security.MessageDigest;
 import java.time.Instant;
 
 public final class ComputerSyncService {
-    private static final String SETUP_SCHEME = "mobilepos-sync";
+    private static final String MANUAL_CONFIG_MISSING_MESSAGE = "连接信息缺少 IP、端口或 Token";
+    private static final String INVALID_IP_MESSAGE = "电脑同步 IP 地址无效，请输入电脑工具显示的局域网 IPv4 地址";
+    private static final String LOOPBACK_IP_MESSAGE = "127.0.0.1 代表手机自身，请输入电脑工具显示的局域网 IP";
 
     private final ComputerSyncStore store;
     private final ComputerSyncClient client;
@@ -24,15 +25,19 @@ public final class ComputerSyncService {
         return store.load(context);
     }
 
-    public ComputerSyncConfig configureFromSetupUri(Context context, String setupUri) throws ComputerSyncException {
-        ComputerSyncConfig parsed = parseSetupUri(setupUri);
-        store.save(context, parsed);
-        return parsed;
+    public ComputerSyncConfig configureManual(
+            Context context,
+            String host,
+            int port,
+            String token
+    ) throws ComputerSyncException {
+        ComputerSyncConfig config = validateManualConfig(host, port, token);
+        store.save(context, config);
+        return config;
     }
 
-    public boolean testConnection(Context context) throws ComputerSyncException {
-        client.health(requireConfig(context));
-        return true;
+    public ComputerSyncHealth testConnection(Context context) throws ComputerSyncException {
+        return client.health(requireConfig(context));
     }
 
     public ComputerSyncManifest checkManifest(Context context) throws ComputerSyncException {
@@ -70,43 +75,43 @@ public final class ComputerSyncService {
         }
     }
 
-    private ComputerSyncConfig parseSetupUri(String setupUri) throws ComputerSyncException {
-        Uri uri = Uri.parse(setupUri == null ? "" : setupUri.trim());
-        if (!SETUP_SCHEME.equals(uri.getScheme())) {
-            throw new ComputerSyncException("不是有效的电脑同步二维码");
-        }
-        String host = query(uri, "host");
-        String token = query(uri, "token");
-        int port = parsePort(query(uri, "port"));
+    static ComputerSyncConfig validateManualConfig(
+            String host,
+            int port,
+            String token
+    ) throws ComputerSyncException {
         ComputerSyncConfig config = new ComputerSyncConfig(host, port, token, "", "", "", "");
+        if (config.host().isEmpty()) {
+            throw invalidConfig(MANUAL_CONFIG_MISSING_MESSAGE);
+        }
+        if (config.port() <= 0 || config.port() > 65535) {
+            throw invalidConfig("电脑同步端口无效");
+        }
+        if (config.token().isEmpty()) {
+            throw invalidConfig(MANUAL_CONFIG_MISSING_MESSAGE);
+        }
+        if ("127.0.0.1".equals(config.host())) {
+            throw invalidConfig(LOOPBACK_IP_MESSAGE);
+        }
+        if ("localhost".equalsIgnoreCase(config.host()) || "0.0.0.0".equals(config.host())) {
+            throw invalidConfig(INVALID_IP_MESSAGE);
+        }
+        if (!ComputerSyncConfig.isIpv4Address(config.host())) {
+            throw invalidConfig(INVALID_IP_MESSAGE);
+        }
         if (!config.configured()) {
-            throw new ComputerSyncException("电脑同步二维码缺少 host、port 或 token");
+            throw invalidConfig(MANUAL_CONFIG_MISSING_MESSAGE);
         }
         return config;
     }
 
-    private int parsePort(String value) throws ComputerSyncException {
-        try {
-            int port = Integer.parseInt(value);
-            if (port <= 0 || port > 65535) {
-                throw new NumberFormatException("out of range");
-            }
-            return port;
-        } catch (Exception ex) {
-            throw new ComputerSyncException("电脑同步端口无效");
-        }
-    }
-
-    private String query(Uri uri, String key) {
-        String value = uri.getQueryParameter(key);
-        return value == null ? "" : value.trim();
+    private static ComputerSyncException invalidConfig(String message) {
+        return new ComputerSyncException(ComputerSyncFailureReason.INVALID_CONFIG, message);
     }
 
     private ComputerSyncConfig requireConfig(Context context) throws ComputerSyncException {
         ComputerSyncConfig config = store.load(context);
-        if (!config.configured()) {
-            throw new ComputerSyncException("电脑同步尚未配置");
-        }
+        validateManualConfig(config.host(), config.port(), config.token());
         return config;
     }
 

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import io
 from typing import Dict
 
 from PySide6.QtCore import QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QIcon, QPixmap
+from PySide6.QtGui import QAction, QCloseEvent, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QFormLayout,
     QFrame,
+    QFormLayout,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,7 +21,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
+    QScrollArea,
     QSpinBox,
     QStyle,
     QSystemTrayIcon,
@@ -30,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.connection_presentation import ConnectionPresentation, present_connection
 from ui.controller import UiController
 from ui.network import candidate_lan_hosts
 
@@ -65,11 +65,14 @@ class MainWindow(QMainWindow):
         self.controller = controller
         self._exiting = False
         self._backup_thread = None
+        self._connection_presentation: ConnectionPresentation | None = None
+        self._service_start_error = ""
         self._build_ui()
         self._build_tray()
         self._load_config()
         self._connect_events()
         self._start_http_on_launch()
+        self._refresh_connection_diagnostic()
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.refresh_status)
@@ -80,6 +83,7 @@ class MainWindow(QMainWindow):
         self._configure_backup_timer()
 
         self.refresh_status()
+        self.setMinimumSize(860, 680)
         self.resize(960, 760)
 
     def _build_ui(self) -> None:
@@ -104,7 +108,7 @@ class MainWindow(QMainWindow):
         content.addWidget(self._http_group(), 0, 1)
         content.addWidget(self._source_group(), 1, 0)
         content.addWidget(self._backup_group(), 1, 1)
-        content.addWidget(self._qr_group(), 2, 0)
+        content.addWidget(self._connection_group(), 2, 0)
         content.addWidget(self._log_group(), 2, 1)
         content.setColumnStretch(0, 1)
         content.setColumnStretch(1, 1)
@@ -113,14 +117,18 @@ class MainWindow(QMainWindow):
         footer = QHBoxLayout()
         self.save_button = QPushButton("保存设置")
         self.start_stop_button = QPushButton("停止 HTTP 服务")
-        self.copy_url_button = QPushButton("复制同步地址")
+        self.copy_connection_button = QPushButton("复制全部连接信息")
         footer.addWidget(self.save_button)
         footer.addWidget(self.start_stop_button)
         footer.addStretch(1)
-        footer.addWidget(self.copy_url_button)
+        footer.addWidget(self.copy_connection_button)
         root_layout.addLayout(footer)
 
-        self.setCentralWidget(root)
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setWidget(root)
+        self.setCentralWidget(scroll_area)
         self.setStyleSheet(
             """
             QWidget {
@@ -172,11 +180,6 @@ class MainWindow(QMainWindow):
                 background: #a8b6b1;
                 border-color: #a8b6b1;
             }
-            QFrame#qrBox {
-                border: 1px dashed #b8c8bf;
-                border-radius: 8px;
-                background: #fbfcfa;
-            }
             """
         )
 
@@ -185,13 +188,13 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(group)
         self.service_status_label = QLabel("停止")
         self.service_binding_label = QLabel("未绑定")
-        self.qr_status_label = QLabel("未生成")
+        self.connection_status_label = QLabel("未生成")
         self.last_backup_label = QLabel("无")
         self.last_request_label = QLabel("无")
         self.last_error_label = QLabel("无")
         layout.addRow("HTTP 服务", self.service_status_label)
         layout.addRow("服务绑定", self.service_binding_label)
-        layout.addRow("二维码", self.qr_status_label)
+        layout.addRow("手机连接", self.connection_status_label)
         layout.addRow("最近备份", self.last_backup_label)
         layout.addRow("最近请求", self.last_request_label)
         layout.addRow("错误", self.last_error_label)
@@ -261,25 +264,56 @@ class MainWindow(QMainWindow):
         layout.setColumnStretch(1, 1)
         return group
 
-    def _qr_group(self) -> QGroupBox:
-        group = QGroupBox("二维码")
-        layout = QVBoxLayout(group)
-        hint = QLabel("手机 App 扫描二维码连接电脑同步工具")
+    def _connection_group(self) -> QGroupBox:
+        group = QGroupBox("手机连接信息")
+        layout = QGridLayout(group)
+        hint = QLabel("手机和电脑必须在同一局域网。手机端手动输入下面三项后测试连接。")
         hint.setWordWrap(True)
-        self.qr_frame = QFrame()
-        self.qr_frame.setObjectName("qrBox")
-        self.qr_frame.setMinimumHeight(260)
-        qr_layout = QVBoxLayout(self.qr_frame)
-        self.qr_label = QLabel()
-        self.qr_label.setAlignment(Qt.AlignCenter)
-        self.qr_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        qr_layout.addWidget(self.qr_label)
-        self.setup_url_label = QLabel("")
-        self.setup_url_label.setWordWrap(True)
-        layout.addWidget(hint)
-        layout.addWidget(self.qr_frame, 1)
-        layout.addWidget(self.setup_url_label)
+
+        self.connection_host_edit = self._readonly_field()
+        self.connection_port_edit = self._readonly_field()
+        self.connection_token_edit = self._readonly_field(monospace=True)
+        self.connection_http_status_label = QLabel("HTTP 服务：停止")
+        self.connection_http_status_label.setWordWrap(True)
+        self.connection_health_status_label = QLabel("本机健康检查：未执行")
+        self.connection_health_status_label.setWordWrap(True)
+        self.connection_binding_card_label = QLabel("未绑定")
+        self.connection_warning_label = QLabel()
+        self.connection_warning_label.setWordWrap(True)
+        self.connection_warning_label.setStyleSheet("color: #a24624; font-weight: 700;")
+        self.connection_guidance_label = QLabel()
+        self.connection_guidance_label.setWordWrap(True)
+        self.copy_host_button = QPushButton("复制IP")
+        self.copy_token_button = QPushButton("复制Token")
+        self.copy_connection_card_button = QPushButton("复制全部连接信息")
+
+        layout.addWidget(hint, 0, 0, 1, 3)
+        layout.addWidget(QLabel("电脑IP"), 1, 0)
+        layout.addWidget(self.connection_host_edit, 1, 1)
+        layout.addWidget(self.copy_host_button, 1, 2)
+        layout.addWidget(QLabel("端口"), 2, 0)
+        layout.addWidget(self.connection_port_edit, 2, 1, 1, 2)
+        layout.addWidget(QLabel("Token"), 3, 0)
+        layout.addWidget(self.connection_token_edit, 3, 1)
+        layout.addWidget(self.copy_token_button, 3, 2)
+        layout.addWidget(QLabel("实际监听"), 4, 0)
+        layout.addWidget(self.connection_binding_card_label, 4, 1, 1, 2)
+        layout.addWidget(self.connection_http_status_label, 5, 0, 1, 3)
+        layout.addWidget(self.connection_health_status_label, 6, 0, 1, 3)
+        layout.addWidget(self.connection_warning_label, 7, 0, 1, 3)
+        layout.addWidget(self.connection_guidance_label, 8, 0, 1, 3)
+        layout.addWidget(self.copy_connection_card_button, 9, 1, 1, 2)
+        layout.setColumnStretch(1, 1)
         return group
+
+    def _readonly_field(self, monospace: bool = False) -> QLineEdit:
+        field = QLineEdit()
+        field.setReadOnly(True)
+        if monospace:
+            font = QFont("Consolas")
+            font.setStyleHint(QFont.Monospace)
+            field.setFont(font)
+        return field
 
     def _log_group(self) -> QGroupBox:
         group = QGroupBox("事件日志")
@@ -293,7 +327,7 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         self.tray_open_action = QAction("打开同步工具", self)
         self.tray_backup_action = QAction("立即备份", self)
-        self.tray_copy_action = QAction("复制同步地址", self)
+        self.tray_copy_action = QAction("复制连接信息", self)
         self.tray_exit_action = QAction("退出", self)
         menu.addAction(self.tray_open_action)
         menu.addAction(self.tray_backup_action)
@@ -314,10 +348,13 @@ class MainWindow(QMainWindow):
         self.save_button.clicked.connect(self.save_settings)
         self.regen_token_button.clicked.connect(self.regenerate_token)
         self.start_stop_button.clicked.connect(self.toggle_http)
-        self.copy_url_button.clicked.connect(self.copy_setup_url)
+        self.copy_connection_button.clicked.connect(self.copy_connection_info)
+        self.copy_connection_card_button.clicked.connect(self.copy_connection_info)
+        self.copy_host_button.clicked.connect(self.copy_host)
+        self.copy_token_button.clicked.connect(self.copy_token)
         self.tray_open_action.triggered.connect(self.show_and_raise)
         self.tray_backup_action.triggered.connect(self.start_backup)
-        self.tray_copy_action.triggered.connect(self.copy_setup_url)
+        self.tray_copy_action.triggered.connect(self.copy_connection_info)
         self.tray_exit_action.triggered.connect(self.exit_application)
 
     def _load_config(self) -> None:
@@ -329,21 +366,23 @@ class MainWindow(QMainWindow):
         self.port_spin.setValue(config.port)
         self.host_combo.clear()
         hosts = candidate_lan_hosts()
-        if config.selected_host not in hosts:
-            hosts.insert(0, config.selected_host)
+        if config.selected_host not in hosts and config.selected_host:
+            hosts.append(config.selected_host)
         self.host_combo.addItems(hosts)
         self.host_combo.setCurrentText(config.selected_host)
         self.token_edit.setText(config.token)
         self.start_on_boot_check.setChecked(config.start_on_boot)
         self._update_source_controls()
-        self.refresh_qr()
+        self.refresh_connection_info()
 
     def _start_http_on_launch(self) -> None:
         try:
             self.controller.start_service()
+            self._service_start_error = ""
         except Exception as exc:
-            self.last_error_label.setText(str(exc))
-            QMessageBox.warning(self, "HTTP 服务未启动", "端口可能被占用，请修改端口后保存。\n\n" + str(exc))
+            self._service_start_error = self._service_start_error_message(exc)
+            self.last_error_label.setText(self._service_start_error)
+            QMessageBox.warning(self, "HTTP 服务未启动", self._service_start_error)
 
     def _configure_backup_timer(self) -> None:
         minutes = self.controller.config.backup_interval_minutes
@@ -378,21 +417,31 @@ class MainWindow(QMainWindow):
                 db_folder_path=self.db_folder_edit.text(),
                 backup_interval_minutes=int(self.interval_combo.currentData()),
                 port=int(self.port_spin.value()),
-                selected_host=self.host_combo.currentText(),
+                selected_host=self._selected_host_from_combo(),
                 start_on_boot=self.start_on_boot_check.isChecked(),
             )
+            self._service_start_error = ""
             self._configure_backup_timer()
             self._load_config()
+            self._refresh_connection_diagnostic()
             self.refresh_status()
             self.tray.showMessage("MobilePosSync", "设置已保存", QSystemTrayIcon.Information, 2000)
         except Exception as exc:
+            service_error = self._service_start_error_message(exc)
+            if service_error:
+                self._service_start_error = service_error
+                self.last_error_label.setText(service_error)
+                self._refresh_connection_diagnostic()
+                self.refresh_status()
+                QMessageBox.warning(self, "HTTP 服务未启动", service_error)
+                return
             QMessageBox.warning(self, "保存失败", str(exc))
 
     def regenerate_token(self) -> None:
         reply = QMessageBox.question(
             self,
             "重新生成 Token",
-            "重新生成后，已经扫码过的手机需要重新扫码连接。",
+            "重新生成后，手机端需要重新输入新的 Token。",
         )
         if reply != QMessageBox.Yes:
             return
@@ -426,7 +475,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.last_error_label.setText(result.message)
         self.refresh_status()
-        self.refresh_qr()
+        self.refresh_connection_info()
 
     def _backup_failed(self, message: str) -> None:
         self.backup_now_button.setEnabled(True)
@@ -440,14 +489,31 @@ class MainWindow(QMainWindow):
                 self.controller.stop_service()
             else:
                 self.controller.start_service()
+            self._service_start_error = ""
+            self._refresh_connection_diagnostic()
             self.refresh_status()
         except Exception as exc:
-            self.last_error_label.setText(str(exc))
-            QMessageBox.warning(self, "HTTP 服务错误", str(exc))
+            self._service_start_error = self._service_start_error_message(exc)
+            self.last_error_label.setText(self._service_start_error)
+            self._refresh_connection_diagnostic()
+            self.refresh_status()
+            QMessageBox.warning(self, "HTTP 服务错误", self._service_start_error)
 
-    def copy_setup_url(self) -> None:
-        QApplication.clipboard().setText(self.controller.setup_url())
-        self.tray.showMessage("MobilePosSync", "同步地址已复制", QSystemTrayIcon.Information, 1800)
+    def copy_connection_info(self) -> None:
+        if not self._can_copy_connection():
+            return
+        QApplication.clipboard().setText(self.controller.connection_summary())
+        self.tray.showMessage("MobilePosSync", "连接信息已复制", QSystemTrayIcon.Information, 1800)
+
+    def copy_host(self) -> None:
+        if not self._can_copy_connection():
+            return
+        QApplication.clipboard().setText(self.controller.connection_host())
+        self.tray.showMessage("MobilePosSync", "电脑IP已复制", QSystemTrayIcon.Information, 1600)
+
+    def copy_token(self) -> None:
+        QApplication.clipboard().setText(self.controller.connection_token())
+        self.tray.showMessage("MobilePosSync", "Token已复制", QSystemTrayIcon.Information, 1600)
 
     def refresh_status(self) -> None:
         if self.controller.service_running:
@@ -457,21 +523,64 @@ class MainWindow(QMainWindow):
             self.service_status_label.setText("停止")
             self.start_stop_button.setText("启动 HTTP 服务")
         self.service_binding_label.setText(self.controller.service_binding_text())
-        self.qr_status_label.setText(self.controller.qr_status_text())
+        self._render_connection_presentation()
         self.last_backup_label.setText(self.controller.latest_backup_text())
         self.last_request_label.setText(self.controller.latest_request_text())
+        self.refresh_connection_info()
         self._refresh_log()
 
-    def refresh_qr(self) -> None:
-        url = self.controller.setup_url()
-        self.setup_url_label.setText(url)
-        pixmap = _qr_pixmap(url)
-        if pixmap is None:
-            self.qr_label.setText("未安装二维码依赖，请运行 pip install -r requirements.txt")
-            self.qr_label.setPixmap(QPixmap())
+    def refresh_connection_info(self) -> None:
+        self.connection_host_edit.setText(self.controller.connection_host())
+        self.connection_port_edit.setText(str(self.controller.connection_port()))
+        self.connection_token_edit.setText(self.controller.connection_token())
+
+    def _refresh_connection_diagnostic(self) -> None:
+        self._connection_presentation = present_connection(self.controller.network_diagnostics())
+
+    def _render_connection_presentation(self) -> None:
+        if self._connection_presentation is None:
             return
-        self.qr_label.setText("")
-        self.qr_label.setPixmap(pixmap)
+        presentation = self._connection_presentation
+        self.connection_host_edit.setText(presentation.host)
+        self.connection_port_edit.setText(str(presentation.port))
+        self.connection_binding_card_label.setText(presentation.bind_address)
+        self.connection_http_status_label.setText(presentation.service_text)
+        self.connection_health_status_label.setText(presentation.local_health_text)
+        self.connection_warning_label.setText(self._service_start_error or presentation.warning_text)
+        self.connection_guidance_label.setText(presentation.guidance_text)
+        self.connection_status_label.setText(self._connection_status_text(presentation))
+        self._set_connection_copy_enabled(presentation.can_copy_connection)
+
+    def _connection_status_text(self, presentation: ConnectionPresentation) -> str:
+        if self._service_start_error:
+            return self._service_start_error
+        if presentation.can_copy_connection:
+            return f"可用，手机连接 {presentation.host}:{presentation.port}"
+        return presentation.warning_text or presentation.service_text
+
+    def _set_connection_copy_enabled(self, enabled: bool) -> None:
+        self.copy_connection_button.setEnabled(enabled)
+        self.copy_connection_card_button.setEnabled(enabled)
+        self.copy_host_button.setEnabled(enabled)
+        self.tray_copy_action.setEnabled(enabled)
+
+    def _selected_host_from_combo(self) -> str:
+        return self.host_combo.currentText().strip()
+
+    def _can_copy_connection(self) -> bool:
+        return bool(
+            self._connection_presentation
+            and self._connection_presentation.can_copy_connection
+            and not self._service_start_error
+        )
+
+    def _service_start_error_message(self, exc: Exception) -> str:
+        text = str(exc)
+        if "10048" in text or "Address already in use" in text:
+            return f"端口 {self.port_spin.value()} 已被占用，请更换端口后再启动 HTTP 服务。"
+        if isinstance(exc, OSError):
+            return "HTTP 服务启动失败，请检查端口设置后重试。"
+        return ""
 
     def _refresh_log(self) -> None:
         self.log_list.clear()
@@ -508,21 +617,6 @@ class MainWindow(QMainWindow):
 
     def _app_icon(self) -> QIcon:
         return self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
-
-
-def _qr_pixmap(url: str) -> QPixmap | None:
-    try:
-        import qrcode
-
-        image = qrcode.make(url)
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        pixmap = QPixmap()
-        pixmap.loadFromData(buffer.getvalue(), "PNG")
-        return pixmap.scaled(220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-    except Exception:
-        return None
-
 
 def launch_gui() -> int:
     from paths import AppPaths

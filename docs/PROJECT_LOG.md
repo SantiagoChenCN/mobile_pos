@@ -312,3 +312,112 @@
   - 电脑端 `pc-sync-tool` 20 个单测通过，`python -m compileall src tests` 通过。
 - 发布边界：
   - 不提交真实经营数据库、商品导出表、`python_envs` 虚拟环境、Gradle build 目录、Python 缓存或 `.pyc` 文件。
+
+### 电脑端手动连接信息后端接入
+
+- 依据：`修改方案/manual_token_sync_connection_plan.md`。
+- 本轮只做电脑端后端增量，不改 HTTP 协议、不改备份/hash/manifest 逻辑、不删除二维码 UI。
+- 新增 `pc-sync-tool/src/connection_info.py`，集中生成手动连接所需的电脑 IP、端口和 Token。
+- `UiController` 新增 `connection_host()`、`connection_port()`、`connection_token()`、`connection_summary()`，供后续前端连接信息卡片和复制按钮调用。
+- `app.py` 新增 `--print-connection-info`，输出：
+  - `电脑IP：...`
+  - `端口：...`
+  - `Token：...`
+- `--print-setup-url` 初版曾保留兼容；后续已按手动连接方案删除。
+- 验证：`python -m unittest discover -s tests` 通过，23 个测试 OK；`python -m compileall src tests` 通过。
+
+### 电脑端旧二维码后端入口删除
+
+- 删除旧二维码模块：`pc-sync-tool/src/qr_code.py`。
+- 删除 `app.py` 中的旧导入、`--print-setup-url` 参数和对应输出分支。
+- `README.md` 已改为使用 `python src\app.py --print-connection-info`，不再描述扫码/二维码连接。
+- `test_config_and_event_log.py` 已从 setup URL 测试改为 `connection_summary` 测试。
+- 检查确认 `pc-sync-tool/src`、`tests`、`README.md`、`requirements.txt`、`scripts` 中无 `qr_code`、`setup_url`、`--print-setup-url` 或二维码/扫码连接引用。
+- 验证：`python -m unittest discover -s tests` 通过，23 个测试 OK；`python -m compileall src tests` 通过。
+
+### 电脑端手动连接信息前端接入
+
+- 依据：`修改方案/manual_token_sync_connection_plan.md`。
+- 本轮只做电脑端前端和打包依赖调整，不改 HTTP 协议、不改备份/hash/manifest 逻辑。
+- 主窗口改动：
+  - 删除二维码卡片和二维码渲染函数。
+  - 新增“手机连接信息”卡片，显示电脑 IP、端口、Token 和 HTTP 连接状态。
+  - 新增复制全部连接信息、复制 IP、复制 Token 按钮。
+  - 状态区“二维码”改为“手机连接”。
+  - 底部按钮和托盘菜单改为“复制连接信息”。
+  - Token 重新生成提示改为手机端需要重新输入新 Token。
+- 依赖/打包改动：
+  - `requirements.txt` 移除 `qrcode[pil]`。
+  - `scripts/build_exe.ps1` 移除 `--hidden-import qrcode.image.pil`。
+  - `qr_code.py` 和 `--print-setup-url` 已删除，不再调用。
+- 验证：
+  - 使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 运行 `python -m unittest discover -s tests`，23 个测试 OK。
+  - `python -m compileall src tests` 通过。
+  - offscreen 构建 `MainWindow` 成功，连接信息字段输出 `127.0.0.1`、测试端口、`TOKEN123`，状态为 `可用`。
+
+### 2026-07-11 电脑端局域网连接修复（后端）
+
+- 依据：`修改方案/computer_phone_sync_connection_fix_plan.md`；本轮仅修改 `pc-sync-tool` 后端与测试，不改 PySide6 布局、Android 或鸣盛原始数据库。
+- HTTP 监听地址与手机展示地址已分离：`SyncHttpService`、GUI controller 和 `--serve` 统一监听 `0.0.0.0`；`selected_host` 仅表示手机应输入的局域网 IPv4，`/health.host` 返回该展示地址。
+- 新增 `network.py`：候选地址会排除 `127.0.0.1`、`0.0.0.0` 和 `169.254.x.x`，优先常见私有 IPv4；首次生成配置时存在可用局域网 IPv4 则作为默认展示地址。
+- 新增 `network_diagnostics.py`：返回服务状态、本机 `/health` 校验、监听地址、展示地址、端口、告警代码和消息；诊断不读取或修改鸣盛数据库，也不记录 Token。
+- HTTP 事件日志新增健康检查成功和无效 Token 请求记录，均不写入查询字符串或 Token 值。
+- 连接摘要不会把 `0.0.0.0`、`127.0.0.1` 或 `169.254.x.x` 作为可复制给手机的 IP。
+- 防火墙策略保持只读提示边界：本轮没有新增、修改或删除 Windows 防火墙规则。
+- 验证：`python -m unittest discover -s tests -v` 通过，30 个测试 OK；`src` 与 `tests` 的 Python 编译检查通过。
+- 待人工验收：在真实手机与收银电脑同一局域网下验证端口入站访问；若本机健康检查成功而手机仍无法访问，应检查 Windows 防火墙、同一 Wi-Fi 与 AP/客户端隔离。
+
+### 2026-07-11 电脑端 IPv4 连接地址校验补充
+
+- `network.py` 的 `is_phone_connectable_host()` 作为唯一的手机连接地址校验入口，拒绝：`127.0.0.1`、`0.0.0.0`、`169.254.x.x`、组播地址、`255.255.255.255` 和保留 IPv4。
+- 正常局域网 IPv4（覆盖 `10.x.x.x`、`172.16.x.x`、`192.168.x.x`）保持可用；候选地址发现也复用同一规则。
+- `ConnectionInfo` 对无效地址不生成可复制的结构化连接信息，摘要不显示无效 IP；UI 继续通过既有诊断结果控制复制按钮，无需重复实现地址判断。
+- HTTP 服务继续监听 `0.0.0.0`；`/health` 对有效配置返回所选局域网 IP，对遗留无效配置绝不回传 `0.0.0.0`。
+- 验证：使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 执行 `python -m unittest discover -s tests -v`，37 个测试 OK；Python 编译检查通过。
+
+### 2026-07-11 电脑端局域网连接修复（前端）
+
+- 依据：`修改方案/computer_phone_sync_connection_fix_plan.md`；本轮只修改 `pc-sync-tool` 的 PySide6 展示层及对应测试，不改 HTTP 协议、配置读写、防火墙规则或鸣盛数据库。
+- 新增 `ui/connection_presentation.py`：集中把结构化网络诊断结果转换为连接状态、地址警告、复制权限和人工排查提示，避免将判断逻辑堆入主窗口。
+- “手机连接信息”卡片现在同时显示手机应输入的局域网 IP 与实际监听地址（例如 `0.0.0.0:8765`），两者用途明确分离。
+- 当服务未运行、本机健康检查失败或地址为 `127.0.0.1`、`0.0.0.0`、`169.254.x.x` 时，界面显示可执行的提示；无效地址或未运行服务时禁用“复制连接信息”和“复制 IP”，Token 仍不会写入事件日志或错误详情。
+- 本机健康检查通过后，界面提示手机仍连接失败时检查 Windows 防火墙、同一 Wi-Fi 和路由器客户端隔离；程序没有新增或修改防火墙规则。
+- 主窗口主体改为可滚动容器，并设定最小窗口尺寸，缩小时连接信息仍可访问。
+- 为避免事件日志被本机 `/health` 检查刷满，诊断仅在启动、停止或保存连接设置后刷新，3 秒状态轮询只渲染缓存的诊断结果。
+- 验证：使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 运行 `python -m unittest discover -s tests -v`，35 个测试全部通过；offscreen 主窗口测试验证了监听地址显示、无效地址禁用复制和滚动容器；`python -m compileall -q src tests` 通过。
+
+### 2026-07-11 电脑端 IP 校验与状态展示修正
+
+- 根据连接修复反馈，IP 校验改为由 `network.py` 的结构化 `PhoneHostValidation` 统一提供；`NetworkDiagnosticResult` 无论 HTTP 服务是否运行都会携带该结果，前端不再直接导入或调用 IP 校验函数。
+- 校验会拒绝回环、`0.0.0.0`、链路本地、组播、广播/保留、非私有 IPv4 和非 IPv4 输入，并提供可执行的中文提示；无效地址时禁用“复制 IP”和“复制全部连接信息”。
+- Windows 下候选地址优先读取实体 Ethernet/Wi-Fi 适配器，并按描述排除常见虚拟、隧道、VPN、Docker 和 WSL 适配器；地址下拉框只保留经相同校验通过的私有局域网 IPv4，因此不会推荐回环、组播、广播或公网地址。
+- 连接卡片将“HTTP 服务”“实际监听”“供手机连接的地址”“本机健康检查”分开显示；防火墙、同一 Wi-Fi 和 AP 隔离仍为只读人工排查提示。
+- 验证：指定 PySide6 虚拟环境运行 `python -m unittest discover -s tests -v`，40 个测试全部通过；`python -m compileall -q src tests` 通过；当前 Windows 环境地址发现结果为 `192.168.0.197`。
+
+### 2026-07-11 手机端局域网连接修复
+
+- 修复背景：手机端手动填写电脑 IP、端口和 Token 后，测试连接显示“电脑同步失败，无法读取电脑同步工具响应”。静态检查确认 Android 目标版本为 35，原清单没有允许局域网明文 HTTP；电脑端原先还可能只绑定 `127.0.0.1`。
+- Android 清单修复：`AndroidManifest.xml` 增加 `android:usesCleartextTraffic="true"`；构建后检查最终合并 manifest，确认该配置确实进入 APK。
+- 手机端同步后端修复：新增 `ComputerSyncFailureReason` 和结构化异常；`ComputerSyncClient` 区分明文 HTTP 阻止、连接超时、连接拒绝、未知地址、HTTP 403 Token 错误、其他 HTTP 错误和无效 JSON/健康响应；不把完整 URL 或 Token 写入错误信息。
+- 手机端配置修复：`ComputerSyncService` 拒绝 `127.0.0.1`、`localhost`、`0.0.0.0`、无效 IPv4、无效端口和空 Token；`/health` 必须确认返回的是 `MobilePosSync`，并校验版本、主机和端口字段。
+- 手机端前端修复：新增 `ComputerSyncErrorPresenter` 和 `ComputerSyncErrorPresentation`，按错误类型输出中文/西班牙语的具体排查建议；连接成功显示电脑 IP、端口和同步工具版本。
+- 离开页面修复：`ImportScreen` 对页面脱离进行监听，使用任务 generation、运行任务集合和 `dispose()` 中断/忽略旧连接任务，防止离开页面后旧回调弹窗或更新已销毁页面。
+- Android 验证：`CoreSmokeTest`、`ComputerSyncClientSmokeTest`、`ComputerSyncServiceSmokeTest`、`ComputerSyncErrorPresenterSmokeTest` 全部通过；完整 Debug APK Gradle 构建成功；项目 APK 与构建输出 SHA-256 一致，最新 APK 为 `E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 `979155 bytes`，时间 `2026-07-11 01:05:42`。
+
+### 2026-07-11 连接修复综合验收
+
+- 电脑端后端：HTTP 服务监听地址与手机展示地址已分离，监听 `0.0.0.0`；局域网地址过滤已覆盖回环、未指定、链路本地、组播、广播/保留和非私有地址；`/health` 不返回 `0.0.0.0`；HTTP 事件日志不记录 Token。
+- 电脑端前端：连接信息卡片分别显示手机连接 IP、实际监听地址、HTTP 服务状态和本机健康检查；无效地址或服务未运行时禁用复制按钮，并显示防火墙、同一 Wi-Fi 和 AP 隔离提示。
+- 电脑端验证：使用项目 PySide6 虚拟环境运行 `python -m unittest discover -s tests -v`，40 个测试全部通过；`python -m compileall -q src tests` 通过。
+- 手机端验证：Android 构建成功，最终 manifest 包含 `usesCleartextTraffic=true`，同步 Client、Service 和错误 presenter 烟测全部通过。
+- 发布状态：新版 APK 已同步到项目 `dist`；电脑端 EXE 和 ZIP 仍为本轮修复前的旧产物，尚未重新打包，不能用于最终联调。
+- 安全边界：本轮没有读取、修改、移动、覆盖或锁定鸣盛软件及其原始数据库文件；程序仍只处理工具自己的配置、备份和日志目录。
+- 下一步：重新打包电脑端 EXE/ZIP，在手机和目标收银电脑同一局域网下完成 `/health`、测试连接、检查 manifest、下载数据库、SHA-256 校验和导入流程的真实端到端联调。
+
+### 2026-07-11 电脑端连接修复版本重新打包与发布准备
+
+- 针对上一条记录中电脑端 EXE/ZIP 仍为旧产物的问题，使用当前源码重新执行 PyInstaller 打包。
+- 新 EXE：`pc-sync-tool/dist/MobilePosSync/MobilePosSync.exe`，大小 `2288007 bytes`。
+- 新 ZIP：`pc-sync-tool/dist/MobilePosSync-windows-20260711.zip`，大小 `48572239 bytes`。
+- 回归验证：电脑端 `python -m unittest discover -s tests -v` 通过，40 个测试 OK；`python -m compileall -q src tests` 通过；PyInstaller 构建成功。
+- 本轮不读取、不修改鸣盛原始数据库；打包内容只包含电脑端同步工具及其运行依赖。真实手机与收银电脑的局域网端到端联调仍需在目标设备上执行。

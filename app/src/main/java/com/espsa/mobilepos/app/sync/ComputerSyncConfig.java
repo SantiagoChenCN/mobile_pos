@@ -59,6 +59,33 @@ public final class ComputerSyncConfig {
         return token;
     }
 
+    static boolean isIpv4Address(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return false;
+        }
+        String[] parts = value.trim().split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (String part : parts) {
+            if (part.isEmpty() || part.length() > 3) {
+                return false;
+            }
+            int number = 0;
+            for (int index = 0; index < part.length(); index++) {
+                char character = part.charAt(index);
+                if (character < '0' || character > '9') {
+                    return false;
+                }
+                number = number * 10 + (character - '0');
+            }
+            if (number > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public String lastSeenSha256() {
         return lastSeenSha256;
     }
