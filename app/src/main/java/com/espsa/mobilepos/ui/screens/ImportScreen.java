@@ -15,6 +15,7 @@ import android.widget.Toast;
 import com.espsa.mobilepos.app.AppServices;
 import com.espsa.mobilepos.app.ImportGateway;
 import com.espsa.mobilepos.app.ProductStoreException;
+import com.espsa.mobilepos.app.time.ArgentinaTime;
 import com.espsa.mobilepos.app.sync.ComputerSyncConfig;
 import com.espsa.mobilepos.app.sync.ComputerSyncException;
 import com.espsa.mobilepos.app.sync.ComputerSyncHealth;
@@ -104,7 +105,7 @@ public final class ImportScreen {
         try {
             ProductLibraryMetadata metadata = services.productLibrary().metadata();
             panel.addView(info(UiText.choose(language, "当前商品数", "Productos actuales"), Integer.toString(services.catalog().productCount())));
-            panel.addView(info(UiText.choose(language, "最近导入时间", "Ultima importacion"), emptyText(metadata.lastImportTimeIso())));
+            panel.addView(info(UiText.choose(language, "最近导入时间", "Ultima importacion"), ArgentinaTime.formatIso(metadata.lastImportTimeIso())));
             panel.addView(info(UiText.choose(language, "最近导入文件", "Archivo"), emptyText(metadata.lastImportFileName())));
             panel.addView(info(
                     UiText.choose(language, "本地手动修改", "Cambios locales"),
@@ -155,8 +156,8 @@ public final class ImportScreen {
         card.addView(info(UiText.choose(language, "Token", "Token"), config.configured()
                 ? UiText.choose(language, "已设置", "Configurado")
                 : "-"));
-        card.addView(info(UiText.choose(language, "上次检查", "Ultima revision"), emptyText(config.lastCheckedAt())));
-        card.addView(info(UiText.choose(language, "上次同步", "Ultima sync"), emptyText(config.lastSyncedAt())));
+        card.addView(info(UiText.choose(language, "上次检查", "Ultima revision"), ArgentinaTime.formatIso(config.lastCheckedAt())));
+        card.addView(info(UiText.choose(language, "上次同步", "Ultima sync"), ArgentinaTime.formatIso(config.lastSyncedAt())));
 
         Button manual = Views.button(context, UiText.choose(language, "手动连接电脑工具", "Conectar PC manualmente"));
         manual.setOnClickListener(v -> showManualComputerSyncDialog());
@@ -395,7 +396,7 @@ public final class ImportScreen {
 
         TextView meta = Views.text(
                 context,
-                snapshot.importedAtIso()
+                ArgentinaTime.formatIso(snapshot.importedAtIso())
                         + "\n" + UiText.choose(language, "商品", "Productos") + ": " + snapshot.productCount()
                         + "  " + UiText.choose(language, "促销", "Promo") + ": " + snapshot.promotionCount(),
                 14,
@@ -463,7 +464,7 @@ public final class ImportScreen {
 
     private String manifestSummary(ComputerSyncManifest manifest) {
         return UiText.choose(language, "文件", "Archivo") + ": " + emptyText(manifest.fileName())
-                + "\n" + UiText.choose(language, "时间", "Fecha") + ": " + emptyText(manifest.createdAt())
+                + "\n" + UiText.choose(language, "时间", "Fecha") + ": " + ArgentinaTime.formatIso(manifest.createdAt())
                 + "\n" + UiText.choose(language, "大小", "Tamano") + ": " + formatBytes(manifest.sizeBytes())
                 + "\nSHA-256: " + shortHash(manifest.sha256());
     }

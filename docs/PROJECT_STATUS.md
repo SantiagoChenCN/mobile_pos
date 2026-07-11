@@ -51,6 +51,7 @@
 - 搜索支持大小写无关、重音符号无关、多关键词乱序、忽略 `de/del/el/la/los/las` 等常见西语连接词。
 - 搜索结果弹窗可滚动，并显示匹配数量。
 - 购物车支持改数量、删行、手动改价。
+- 同一正式商品通过扫码、条码输入或搜索重复加入时，会按稳定 `product.id` 合并为一行并累加数量；合并保留原行 ID、手动单价和单行折扣，数量促销按新数量重新计算；手动 `almacen` 商品始终保持独立行。
 - 收银页购物车商品行已改为紧凑布局，每行只显示商品名、条码、数量、单价、小计和右侧“操作 / Mas”按钮；改数量、改价、删除、折扣、减价、撤回改动等操作已移入二级操作弹窗。
 - 单行商品支持百分比优惠和固定金额优惠，并可撤回手动改价/优惠。
 - 整单支持百分比优惠和固定金额优惠，并可清除。
@@ -96,6 +97,8 @@
 
 - 2026-07-11 电脑端连接修复后，`pc-sync-tool` HTTP 服务默认监听 `0.0.0.0`，而手机连接信息和 `/health.host` 继续使用所选局域网 IPv4；新增局域网地址筛选、结构化网络诊断和不含 Token 的 HTTP 请求事件日志。`python -m unittest discover -s tests -v` 30 个测试通过，`py_compile` 检查通过。
 - 2026-07-11 已补齐电脑端 IPv4 校验：拒绝回环、未指定、链路本地、组播、全局广播和保留地址；无效地址不能生成可复制连接信息，`/health` 不会返回 `0.0.0.0`。使用 PySide6 虚拟环境运行完整测试集，37 个测试通过。
+- 2026-07-11 已新增电脑端 `time_display.py`，将 UTC/带偏移 ISO 时间统一格式化为阿根廷时间 `yyyy-MM-dd HH:mm:ss ART`；manifest、事件日志和备份文件继续保存 UTC。时间模块测试覆盖 8 个边界场景。
+- 2026-07-11 电脑端前端已接入阿根廷时间展示：最近备份、最近请求、controller 事件文本和主窗口事件日志统一显示 `yyyy-MM-dd HH:mm:ss ART`；新增前端回归覆盖，指定 PySide6 虚拟环境下完整电脑端测试 50 个通过，`compileall` 通过。
 
 - `CoreSmokeTest` 通过。
 - 已对照 `docs/PROJECT_LOG.md` 同步到 2026-07-06 的“修复收银/交易明细 tab 无法返回”记录。
@@ -106,7 +109,7 @@
 - 2026-07-06 修复收银/交易明细 tab 返回问题后，`CoreSmokeTest` 再次通过。
 - 2026-07-06 修复收银/交易明细 tab 返回问题后，完整 debug APK Gradle 构建成功。
 - 2026-07-07 精简收银页商品行 UI 后，`CoreSmokeTest` 通过，完整 debug APK Gradle 构建成功。
-- 最新本地 APK：`E:\手机收银软件开发\android-emergency-pos\dist\EmergencyPOS-debug.apk`，大小 931969 bytes，构建时间 2026-07-08 02:00:36。
+- 2026-07-08 历史 APK 记录：当时 `EmergencyPOS-debug.apk` 大小为 `931969 bytes`；当前最新 APK 以“近期已完成的连接修复”章节中的 2026-07-11 Hash 记录为准。
 - 真实商品数据库中确认 `huevo`、`huevo blanco`、`maple` 等关键词存在匹配数据。
 - 搜索回归测试覆盖：
   - `huevo` 返回全部匹配测试商品。
@@ -122,13 +125,17 @@
 - 手机端同步配置层已拒绝 `127.0.0.1`、`localhost`、`0.0.0.0`、无效 IPv4 和缺失的端口/Token；健康检查会校验 `ok`、`app`、版本、主机和端口字段。
 - 手机端前端已接入中西双语错误 presenter，按错误类型显示同一 Wi-Fi、防火墙、HTTP 服务、Token、IP 和 APK 版本等可执行提示；连接成功会显示电脑 IP、端口和电脑工具版本。
 - 手机端导入页面已增加页面脱离监听、任务 generation、运行任务集合和 `dispose()`；页面离开或销毁时会中断连接线程并忽略过期回调，避免离开页面后继续弹窗或刷新旧控件。
-- 手机端回归验证：`CoreSmokeTest`、`ComputerSyncClientSmokeTest`、`ComputerSyncServiceSmokeTest`、`ComputerSyncErrorPresenterSmokeTest` 全部通过；完整 Debug APK Gradle 构建成功；项目 APK 与构建输出 SHA-256 一致，最新 APK 大小 `979155 bytes`，时间 `2026-07-11 01:05:42`。
-- 连接修复后的代码级验收通过：电脑端 40 个测试和 Python 编译检查通过，Android 构建及同步相关烟测通过；尚未完成目标收银电脑上的真实手机局域网联调。
+- 手机端回归验证：`CoreSmokeTest`、`CartMergeSmokeTest`、`ArgentinaLedgerDateSmokeTest`、`ArgentinaTimeSmokeTest`、`ComputerSyncClientSmokeTest`、`ComputerSyncServiceSmokeTest`、`ComputerSyncErrorPresenterSmokeTest` 全部通过；完整 Debug APK Gradle 构建成功。
+- 手机端阿根廷时间已统一：同步检查、同步完成、manifest、最近导入和导入快照在 UI 中显示 `yyyy-MM-dd HH:mm:ss ART`；日账、今日销售和销售单号使用 `America/Argentina/Buenos_Aires`，原始 `Instant`、manifest 和同步存储继续保留 UTC。
+- 购物车同商品合并已通过最终边界修复：`sameProduct()` 会同时排除已有行和新加入商品中的手动价格商品，即使正式商品与手动 `almacen` 商品 ID 冲突，无论加入顺序都保持两行。
+- 最新项目 APK 与构建输出 SHA-256 一致，大小均为 `1032530 bytes`，时间均为 `2026-07-11 10:17:56`，SHA-256 为 `48D488084C4160B999090647EA3130619040CB151A899E543495E604AF52E7C2`。
+- 连接修复后的代码级验收通过：电脑端 50 个测试和 Python 编译检查通过，Android 构建及同步相关烟测通过；尚未完成目标收银电脑上的真实手机局域网联调。
 
 ## 尚未完成
 
 - 2026-07-11 电脑端连接修复还需要在真实手机与收银电脑同一局域网下验收：确认 `0.0.0.0:8765` 的入站访问未被 Windows 防火墙或 AP 隔离阻断；程序不会自动创建或修改防火墙规则。
-- 电脑端连接修复后的 EXE/ZIP 尚未重新打包：当前 `pc-sync-tool/dist/MobilePosSync/MobilePosSync.exe` 和 `MobilePosSync-windows.zip` 时间仍早于本轮最新源码，不能作为本轮最终发布产物；需重新打包后再做目标收银电脑联调。
+- 电脑端连接修复后的 EXE/ZIP 已按当前源码重新打包：`MobilePosSync.exe` 为 `2311392 bytes`，`MobilePosSync-windows.zip` 和 `MobilePosSync-windows-20260711.zip` 均为 `48624632 bytes`；仍需在目标收银电脑完成真实手机局域网联调。
+- 购物车同商品合并仍需真机人工验收：分别通过扫码、条码输入和搜索连续加入同一正式商品，确认只显示一行并累加为 `x2/x3`；同时确认手动 `almacen` 商品保持独立行。
 
 - 最新前端接入后还需要在真机或模拟器上做端到端手工验收：商品新建、修改、删除、导入、回滚、扫码进入商品编辑、收银加入商品、当前购物车快照不随商品编辑变化。
 - 收银和商品编辑中的关键词搜索在弹出结果前有短暂停顿，需优化搜索索引、结果数量限制或异步搜索体验。
@@ -288,3 +295,14 @@
 - 验证结果：电脑端 `python -m unittest discover -s tests -v` 通过，40 个测试 OK；`python -m compileall -q src tests` 通过；PyInstaller 打包成功。
 - 发布边界：本轮只发布电脑端同步工具源码和打包产物，不包含鸣盛原始数据库、商品导出数据、虚拟环境、缓存或构建中间文件。
 - 真实手机与收银电脑的同局域网端到端联调仍待在目标设备上完成；当前打包产物可用于该联调。
+
+### 2026-07-11 阿根廷时间与购物车合并版本发布验收
+
+- 手机端已完成阿根廷业务时区统一、正式商品按商品 ID 合并数量、手动 `almacen` 商品保持独立行，以及手动商品 ID 冲突边界修复。
+- 电脑端已完成事件日志和主窗口时间统一显示为 `yyyy-MM-dd HH:mm:ss ART`，同时保留原始 UTC/带时区数据存储格式。
+- 电脑端新增 `tzdata>=2025.1` 依赖，确保 Windows 打包环境能够加载 `America/Argentina/Buenos_Aires`。
+- 电脑端验证：50 个测试通过，`compileall` 通过，时区加载检查通过，PyInstaller 打包成功。
+- 新电脑端 EXE：`pc-sync-tool/dist/MobilePosSync/MobilePosSync.exe`，大小 `2314688 bytes`。
+- 新电脑端 ZIP：`pc-sync-tool/dist/MobilePosSync-windows-20260711-argentina-time-cart-merge.zip`，大小 `48973489 bytes`。
+- Android 最新 APK：`android-emergency-pos/dist/EmergencyPOS-debug.apk`，大小 `1032530 bytes`；手机端回归烟测与 Gradle 构建已通过。
+- 剩余人工验收：在真实手机上验证正式商品连续加入时显示为一行并累计数量，手动 `almacen` 商品仍保持独立行；在真实收银电脑上验证电脑端 ZIP 的启动与局域网连接。

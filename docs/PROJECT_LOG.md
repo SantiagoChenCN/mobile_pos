@@ -375,6 +375,16 @@
 - HTTP 服务继续监听 `0.0.0.0`；`/health` 对有效配置返回所选局域网 IP，对遗留无效配置绝不回传 `0.0.0.0`。
 - 验证：使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 执行 `python -m unittest discover -s tests -v`，37 个测试 OK；Python 编译检查通过。
 
+### 2026-07-11 电脑端阿根廷时间格式化后端模块
+
+- 依据：`修改方案/argentina_time_and_cart_merge_plan.md` 第 6 节；本轮只实现电脑端后端部分，不修改电脑端 UI 接入、Android 或购物车逻辑。
+- 新增 `pc-sync-tool/src/time_display.py`，提供 `parse_iso_datetime()` 和 `format_argentina_time()`。
+- 支持 `Z`、`+00:00`、`-03:00`、带时区 `datetime` 和无时区旧 `datetime`；无时区值按 UTC 兼容旧数据，不读取电脑系统时区。
+- 优先使用 `America/Argentina/Buenos_Aires`，Windows/PyInstaller 缺少 IANA 时区数据时回退到固定 `UTC-03:00 / ART`，不引入第三方依赖。
+- 空值返回 `-`，非法历史文本原样返回，避免展示层崩溃。
+- 未修改 `manifest.utc_now_iso()`、manifest `createdAt/version`、事件日志写入时间和备份历史文件名，它们继续保存 UTC 绝对时间。
+- 新增 `tests/test_time_display.py`，覆盖日期跨界、空值、非法文本、Z/偏移 ISO、带时区和无时区 `datetime`。
+
 ### 2026-07-11 电脑端局域网连接修复（前端）
 
 - 依据：`修改方案/computer_phone_sync_connection_fix_plan.md`；本轮只修改 `pc-sync-tool` 的 PySide6 展示层及对应测试，不改 HTTP 协议、配置读写、防火墙规则或鸣盛数据库。
@@ -421,3 +431,52 @@
 - 新 ZIP：`pc-sync-tool/dist/MobilePosSync-windows-20260711.zip`，大小 `48572239 bytes`。
 - 回归验证：电脑端 `python -m unittest discover -s tests -v` 通过，40 个测试 OK；`python -m compileall -q src tests` 通过；PyInstaller 构建成功。
 - 本轮不读取、不修改鸣盛原始数据库；打包内容只包含电脑端同步工具及其运行依赖。真实手机与收银电脑的局域网端到端联调仍需在目标设备上执行。
+
+### 2026-07-11 电脑端阿根廷时间展示前端接入
+
+- 依据：`修改方案/argentina_time_and_cart_merge_plan.md` 第 7 节；本轮严格限定在 `pc-sync-tool` 电脑端前端展示，不修改 Android、购物车、manifest 协议或 UTC 存储。
+- `UiController.latest_backup_text()` 对 manifest 的 `createdAt` 使用后端已有 `time_display.format_argentina_time()`。
+- `UiController.latest_request_text()` 和 `_format_event()` 对事件日志时间使用统一格式化器。
+- `MainWindow._refresh_log()` 对事件日志列表时间使用统一格式化器；最近备份、最近请求和日志列表均显示 `yyyy-MM-dd HH:mm:ss ART`。
+- 原始 manifest、事件日志和备份文件名仍由原有逻辑保存 UTC/带时区 ISO 时间，电脑系统时区不会影响界面显示。
+- 新增 controller 与 offscreen 主窗口回归测试，覆盖 UTC 跨日期转换后的用户可见时间。
+- 验证：使用 `E:\手机收银软件开发\python_envs\pyside6_qrcode\.venv\Scripts\python.exe` 运行 `python -m unittest discover -s tests -v`，50 个测试全部通过；`python -m compileall -q src tests` 通过。
+
+### 2026-07-11 电脑端前端时间展示版本打包
+
+- 使用项目指定虚拟环境执行 PyInstaller，重新生成 `pc-sync-tool/dist/MobilePosSync/MobilePosSync.exe`，大小 `2311392 bytes`。
+- 重新生成 `pc-sync-tool/dist/MobilePosSync-windows.zip` 和 `pc-sync-tool/dist/MobilePosSync-windows-20260711.zip`，大小均为 `48624632 bytes`。
+- 两个 ZIP 均核对包含当前 EXE，归档条目数均为 210；未读取、修改或打包鸣盛原始数据库文件。
+
+### 2026-07-11 手机端阿根廷业务时间与购物车同商品合并
+
+- 依据：`修改方案/argentina_time_and_cart_merge_plan.md`。
+- 新增 `app/time/ArgentinaTime.java`，统一使用 `America/Argentina/Buenos_Aires`，显示格式为 `yyyy-MM-dd HH:mm:ss ART`；空值显示 `-`，非法历史时间安全回退，不受手机系统时区影响。
+- 同步/导入页面的最近导入、上次检查、上次同步、manifest 时间和最近导入快照均接入 `ArgentinaTime`。
+- `AppServices` 装配的 `CheckoutService` 和 `LedgerService` 统一使用阿根廷业务时区；交易列表和日账的“今天”使用 `ArgentinaTime.today()`，销售单号时间也使用传入的阿根廷业务时区。
+- UTC 边界保持不变：销售 `Instant`、同步检查/完成时间、manifest、导入快照存储和 HTTP 协议继续保存 UTC/带时区 ISO 时间，仅在 UI 展示时转换。
+- `core/checkout/Cart.addProduct()` 改为正式商品按稳定 `product.id` 查找已有行并累加数量；通过 `existing.withQuantity()` 保留原行 ID、商品快照、手动单价和单行折扣，价格计算器会按合并后的数量重新计算数量促销。
+- 扫码、条码输入和搜索选择均复用 `Cart.addProduct()`，不在 UI 重复实现合并规则。
+- 手动 `almacen` 商品不参与合并，即使价格相同也保持独立行。
+
+### 2026-07-11 手动商品 ID 冲突边界修复与最终验收
+
+- 首轮验收发现：购物车合并只检查新加入商品是否为手动商品；极端情况下，正式商品 ID 与已有手动商品 ID 相同时可能错误合并。
+- `Cart.sameProduct()` 已改为同时检查左右商品：任意一侧 `isManualPriceProduct()` 为 true 时都返回 false，只允许两个正式商品按相同 `product.id` 合并。
+- `CartMergeSmokeTest` 新增两个方向的冲突测试：先手动后正式、先正式后手动；相同 ID 均保持两行。
+- 回归测试通过：`CoreSmokeTest`、`CartMergeSmokeTest`、`ArgentinaLedgerDateSmokeTest`、`ArgentinaTimeSmokeTest`、`ComputerSyncClientSmokeTest`、`ComputerSyncServiceSmokeTest`、`ComputerSyncErrorPresenterSmokeTest` 全部通过。
+- 完整 Android Debug APK Gradle 构建成功。
+- 构建 APK 与项目 `android-emergency-pos/dist/EmergencyPOS-debug.apk` 大小均为 `1032530 bytes`，时间均为 `2026-07-11 10:17:56`。
+- 两个 APK 的 SHA-256 完全一致：`48D488084C4160B999090647EA3130619040CB151A899E543495E604AF52E7C2`。
+- 电脑端阿根廷时间版本已重新打包：EXE/ZIP 时间晚于最新电脑端源码；电脑端 50 个测试和 `compileall` 已通过。
+- 安全边界保持不变：未读取、修改、移动、覆盖或锁定鸣盛软件及其原始数据库文件。
+- 剩余人工验收：在真机上分别通过扫码、条码输入和搜索连续加入同一正式商品，确认购物车只显示一行并依次变为 `x2/x3`；同时检查手动 `almacen` 商品仍为独立行。
+
+### 2026-07-11 阿根廷时间与购物车合并版本发布准备
+
+- 同步最新手机端和电脑端开发后，重新运行电脑端完整回归：50 个测试通过，`python -m compileall -q src tests` 通过。
+- 发现电脑端打包环境缺少 `tzdata`，导致 Windows Python 无法加载 `America/Argentina/Buenos_Aires`；已将 `tzdata>=2025.1` 写入 `pc-sync-tool/requirements.txt` 并安装到 E 盘虚拟环境。
+- 时区加载检查通过：`ZoneInfo('America/Argentina/Buenos_Aires')` 可正常加载；PyInstaller 日志已识别并打包 `tzdata` 时区数据，不再出现隐藏导入缺失警告。
+- 重新打包电脑端：EXE `2314688 bytes`；ZIP `MobilePosSync-windows-20260711-argentina-time-cart-merge.zip`，`48973489 bytes`。
+- 电脑端 ZIP 未包含鸣盛原始数据库、商品导出文件、Python 虚拟环境或构建缓存；本轮仅发布同步工具及其运行依赖。
+- 手机端最新 APK 已由前一轮 Android Gradle 验收生成，大小 `1032530 bytes`；本轮将与电脑端新 ZIP 一并同步发布。

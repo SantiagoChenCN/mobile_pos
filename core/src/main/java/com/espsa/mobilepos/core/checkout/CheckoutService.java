@@ -22,18 +22,27 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class CheckoutService {
-    private static final DateTimeFormatter SALE_ID_TIME =
-            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
-
     private final ProductRepository productRepository;
     private final PriceCalculator priceCalculator;
     private final SaleRepository saleRepository;
+    private final DateTimeFormatter saleIdTime;
     private final AtomicInteger sequence = new AtomicInteger(1);
 
     public CheckoutService(ProductRepository productRepository, PriceCalculator priceCalculator, SaleRepository saleRepository) {
+        this(productRepository, priceCalculator, saleRepository, ZoneId.systemDefault());
+    }
+
+    public CheckoutService(
+            ProductRepository productRepository,
+            PriceCalculator priceCalculator,
+            SaleRepository saleRepository,
+            ZoneId businessZone
+    ) {
         this.productRepository = Objects.requireNonNull(productRepository, "productRepository");
         this.priceCalculator = Objects.requireNonNull(priceCalculator, "priceCalculator");
         this.saleRepository = Objects.requireNonNull(saleRepository, "saleRepository");
+        this.saleIdTime = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                .withZone(businessZone == null ? ZoneId.systemDefault() : businessZone);
     }
 
     public Cart startCart() {
@@ -109,7 +118,10 @@ public final class CheckoutService {
     }
 
     private String nextSaleId() {
-        return "SALE-" + SALE_ID_TIME.format(Instant.now()) + "-" + sequence.getAndIncrement();
+        return formatSaleId(Instant.now(), sequence.getAndIncrement());
+    }
+
+    String formatSaleId(Instant instant, int sequenceNumber) {
+        return "SALE-" + saleIdTime.format(instant) + "-" + sequenceNumber;
     }
 }
-

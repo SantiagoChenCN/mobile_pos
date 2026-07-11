@@ -6,6 +6,7 @@ import com.espsa.mobilepos.core.model.Product;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 public final class Cart {
@@ -36,9 +37,35 @@ public final class Cart {
     }
 
     public CartLine addProduct(Product product, int quantity) {
+        Objects.requireNonNull(product, "product");
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero");
+        }
+
+        if (!product.isManualPriceProduct()) {
+            for (int index = 0; index < lines.size(); index++) {
+                CartLine existing = lines.get(index);
+                if (sameProduct(existing.product(), product)) {
+                    CartLine updated = existing.withQuantity(Math.addExact(existing.quantity(), quantity));
+                    lines.set(index, updated);
+                    return updated;
+                }
+            }
+        }
+
         CartLine line = new CartLine(product, quantity);
         lines.add(line);
         return line;
+    }
+
+    private boolean sameProduct(Product left, Product right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left.isManualPriceProduct() || right.isManualPriceProduct()) {
+            return false;
+        }
+        return left.id().equals(right.id());
     }
 
     public void replaceLine(CartLine updatedLine) {
@@ -68,4 +95,3 @@ public final class Cart {
         return lines.isEmpty();
     }
 }
-

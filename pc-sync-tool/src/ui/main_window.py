@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from ui.connection_presentation import ConnectionPresentation, present_connection
 from ui.controller import UiController
 from ui.network import candidate_lan_hosts
+from time_display import format_argentina_time
 
 
 INTERVAL_LABELS: Dict[int, str] = {
@@ -585,7 +586,7 @@ class MainWindow(QMainWindow):
     def _refresh_log(self) -> None:
         self.log_list.clear()
         for entry in reversed(self.controller.read_events()[-80:]):
-            time = entry.get("time", "")
+            time = format_argentina_time(entry.get("time"))
             level = entry.get("level", "INFO")
             message = entry.get("message", "")
             self.log_list.addItem(f"{time} [{level}] {message}")

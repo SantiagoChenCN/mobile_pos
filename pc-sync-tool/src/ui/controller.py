@@ -15,6 +15,7 @@ from network_diagnostics import NetworkDiagnosticResult, diagnose_network
 from paths import AppPaths
 from source_locator import SourceDatabase, resolve_source
 from startup import StartupRegistrationError, set_enabled
+from time_display import format_argentina_time
 
 
 class UiController:
@@ -153,7 +154,7 @@ class UiController:
         manifest = self.read_manifest()
         if manifest.get("ok"):
             file_name = manifest.get("fileName", "")
-            created = manifest.get("createdAt", "")
+            created = format_argentina_time(manifest.get("createdAt"))
             size = int(manifest.get("sizeBytes", 0) or 0)
             return f"{created} 成功 {file_name} ({_format_size(size)})"
         return "还没有可同步备份"
@@ -171,7 +172,8 @@ class UiController:
             self.event_log.append("Startup registration failed: " + str(exc), "WARN")
 
     def _format_event(self, entry: Dict[str, Any]) -> str:
-        return f"{entry.get('time', '')} {entry.get('message', '')}".strip()
+        timestamp = format_argentina_time(entry.get("time"))
+        return f"{timestamp} {entry.get('message', '')}".strip()
 
 
 def _format_size(size_bytes: int) -> str:

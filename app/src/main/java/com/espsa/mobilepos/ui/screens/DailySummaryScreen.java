@@ -6,14 +6,13 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.espsa.mobilepos.app.AppServices;
+import com.espsa.mobilepos.app.time.ArgentinaTime;
 import com.espsa.mobilepos.core.ledger.DailySummary;
 import com.espsa.mobilepos.core.model.PaymentMethod;
 import com.espsa.mobilepos.ui.AppLanguage;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
-
-import java.time.LocalDate;
 
 public final class DailySummaryScreen {
     private final Context context;
@@ -34,7 +33,7 @@ public final class DailySummaryScreen {
         StyleGuide.pageTitle(title);
         page.addView(title, Views.matchWrap());
 
-        DailySummary summary = services.ledger().dailySummary(LocalDate.now());
+        DailySummary summary = services.ledger().dailySummary(ArgentinaTime.today());
         page.addView(metric(UiText.choose(language, "今日销售额", "Total de hoy"), "$" + summary.total().amount(), true));
         page.addView(metric(UiText.choose(language, "订单数", "Ventas"), Integer.toString(summary.saleCount()), false));
         page.addView(metric(UiText.choose(language, "作废单", "Anuladas"), summary.voidedCount() + " / $" + summary.voidedTotal().amount(), false));
@@ -58,4 +57,3 @@ public final class DailySummaryScreen {
         return row;
     }
 }
-

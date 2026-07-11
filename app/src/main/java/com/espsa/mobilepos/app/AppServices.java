@@ -25,10 +25,10 @@ import com.espsa.mobilepos.app.sync.ComputerSyncException;
 import com.espsa.mobilepos.app.sync.ComputerSyncManifest;
 import com.espsa.mobilepos.app.sync.ComputerSyncService;
 import com.espsa.mobilepos.app.sync.ComputerSyncStore;
+import com.espsa.mobilepos.app.time.ArgentinaTime;
 
 import java.io.File;
 import java.io.InputStream;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -89,8 +89,13 @@ public final class AppServices {
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
         ProductCatalogService catalog = new ProductCatalogService(productRepository);
-        CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
-        LedgerService ledger = new LedgerService(saleRepository, ZoneId.systemDefault());
+        CheckoutService checkout = new CheckoutService(
+                productRepository,
+                new DefaultPriceCalculator(),
+                saleRepository,
+                ArgentinaTime.ZONE
+        );
+        LedgerService ledger = new LedgerService(saleRepository, ArgentinaTime.ZONE);
         ProductLibraryService productLibrary = new ProductLibraryService(context, productLocalStore, productRepository);
         ProductOptionProvider optionProvider = new ProductOptionProvider(productLibrary::latestImportSnapshotProducts);
         ProductEditingService productEditing = new ProductEditingService(productRepository, productLibrary, optionProvider);
@@ -117,8 +122,13 @@ public final class AppServices {
 
         InMemorySaleRepository saleRepository = new InMemorySaleRepository();
         ProductCatalogService catalog = new ProductCatalogService(productRepository);
-        CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
-        LedgerService ledger = new LedgerService(saleRepository, ZoneId.systemDefault());
+        CheckoutService checkout = new CheckoutService(
+                productRepository,
+                new DefaultPriceCalculator(),
+                saleRepository,
+                ArgentinaTime.ZONE
+        );
+        LedgerService ledger = new LedgerService(saleRepository, ArgentinaTime.ZONE);
         ProductLocalStore productLocalStore = new ProductLocalStore();
         ProductLibraryService productLibrary = new ProductLibraryService(null, productLocalStore, productRepository);
         ProductOptionProvider optionProvider = new ProductOptionProvider(productLibrary::latestImportSnapshotProducts);

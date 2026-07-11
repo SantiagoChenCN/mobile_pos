@@ -50,6 +50,22 @@ class MainWindowTest(unittest.TestCase):
         finally:
             self._close_window(window)
 
+    def test_event_log_display_uses_argentina_time(self):
+        window = self._window("192.168.1.35")
+        try:
+            window.controller.event_log._write([
+                {
+                    "time": "2026-07-11T04:10:00Z",
+                    "level": "INFO",
+                    "message": "HTTP /health success",
+                }
+            ])
+            window._refresh_log()
+
+            self.assertIn("2026-07-11 01:10:00 ART", window.log_list.item(0).text())
+        finally:
+            self._close_window(window)
+
     def _window(self, host: str) -> MainWindow:
         root = Path(self._temp_dir.name)
         paths = AppPaths(root / "roaming", root / "local")

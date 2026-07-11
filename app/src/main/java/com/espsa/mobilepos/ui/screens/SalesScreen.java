@@ -10,6 +10,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.espsa.mobilepos.app.AppServices;
+import com.espsa.mobilepos.app.time.ArgentinaTime;
 import com.espsa.mobilepos.core.ledger.Sale;
 import com.espsa.mobilepos.core.ledger.SaleLine;
 import com.espsa.mobilepos.core.model.SaleStatus;
@@ -18,7 +19,6 @@ import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
 
-import java.time.LocalDate;
 import java.util.List;
 
 public final class SalesScreen {
@@ -44,7 +44,7 @@ public final class SalesScreen {
 
         ScrollView scroll = new ScrollView(context);
         LinearLayout list = Views.vertical(context);
-        List<Sale> sales = services.ledger().salesForDate(LocalDate.now());
+        List<Sale> sales = services.ledger().salesForDate(ArgentinaTime.today());
         if (sales.isEmpty()) {
             TextView empty = Views.text(context, UiText.choose(language, "今天还没有销售记录", "Sin ventas hoy"), 18, StyleGuide.MUTED);
             empty.setGravity(Gravity.CENTER);
@@ -116,4 +116,3 @@ public final class SalesScreen {
                 .show();
     }
 }
-
