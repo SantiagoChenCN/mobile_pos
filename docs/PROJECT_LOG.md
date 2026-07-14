@@ -480,3 +480,64 @@
 - 重新打包电脑端：EXE `2314688 bytes`；ZIP `MobilePosSync-windows-20260711-argentina-time-cart-merge.zip`，`48973489 bytes`。
 - 电脑端 ZIP 未包含鸣盛原始数据库、商品导出文件、Python 虚拟环境或构建缓存；本轮仅发布同步工具及其运行依赖。
 - 手机端最新 APK 已由前一轮 Android Gradle 验收生成，大小 `1032530 bytes`；本轮将与电脑端新 ZIP 一并同步发布。
+
+### 2026-07-14 文档、README 与修改方案状态同步
+
+- 对照当前源码、测试、构建产物和 `修改方案` 目录重新核对项目状态。
+- 新增 `docs/IMPLEMENTATION_STATUS.md` 作为总进度索引，覆盖 Android、电脑端同步工具、已完成方案、MS2011 方案状态和剩余验收。
+- 新增 `修改方案/README.md` 作为修改方案索引：已完成方案共 9 份；MS2011 商品/促销实时同步的计划文档共 2 份，目前为规划和证据收集状态，未开始正式实现。
+- 更新主发布仓库 README、Android README 和电脑端 README，补充当前功能、手动 IP/端口/Token 连接、LAN 安全边界、`tzdata` 依赖、打包方式和人工联调要求。
+- 本轮没有修改鸣盛软件、原始数据库、SQL Server、MDF/LDF 或外部经营数据，也没有把未验证的促销规则实现或宣称为已支持。
+
+## 2026-07-12
+
+### 鸣盛 EPSA 软件副本只读静态分析
+
+- 分析对象：`E:\手机收银软件开发\EPSA\ESpsa (1)`；全程仅做静态读取，没有运行 EXE、DLL、APK、BAT、REG 或 SQL 脚本，也没有修改副本文件。
+- 共清点 764 个文件，全部能够以只读方式打开；未发现文件 ACL 拒绝、隐藏文件或系统文件。
+- 副本不含鸣盛核心业务程序的完整原始工程。`ESPSA_Pro.exe`、`Pventa_Pro.exe`、`TBT.exe`、`WebShopService.exe` 等为受保护的 32 位原生程序，只能读取 PE 元数据、依赖、资源和有限字符串；`IDATA.exe`、`MSBASIC.exe`、`MSUPDATE.exe` 为 .NET 程序，可恢复部分近似伪源码，但不等于原始源码。
+- `AGT_MAIN.db`、`AGT_REPORT.db`、`AGT_PRINT.db` 为可完整只读查询的 SQLite 数据库；其中 EPSA 副本的商品快照含 11,141 条商品。
+- 拷贝的 `SQL2000\Data` 目录不含实时 `MS2011.MDF/LDF`，仅有加密的每日备份 ZIP；因此确认此前使用的 `.db` 是商品快照，不是实时修改的 SQL Server 主库。
+- 发现配置文件含数据库凭据、支付 Token 等敏感信息，报告未展示具体值；同时识别到关闭防火墙、删除数据库和清空营业记录等高风险维护脚本，明确禁止在日常收银电脑执行。
+- 产出：`E:\手机收银软件开发\鸣盛收银软件_EPSA_静态分析报告.md`。
+
+## 2026-07-13
+
+### 实时 MS2011 主库定位与只读结构确认
+
+- 在收银电脑确认 SQL Server 2000 实时数据文件位于 `D:\Espsa\SQL2000\Data\MS2011.MDF`，日志文件为对应的 `MS2011.LDF`；数据库名为 `MS2011`。
+- 运行中的 MDF/LDF 由 SQL Server 占用，不能把直接复制数据库文件作为实时同步方案；改为通过 SQL Server 正常连接执行只读查询和导出。
+- 在 SQL 查询分析器连接 `SERVER`，选择 `MS2011`，仅执行 `SELECT` 和系统表元数据查询，确认主要表：商品 `MS_GOODLIST`、分类 `MS_GOODTYPELIST`、单位 `MS_UNITLIST`，以及促销相关表。
+- `MS_GOODLIST` 已确认包含 59 个字段，包括 `GID`、`GBarcode`、`GNameX`、`GSalePrice`、`GHuiPrice`、`GHuiPriceCount`、`GClass`、`GUnit`、`GStopFlag`、`GUpdateTime` 等。
+- 查询显示实时主库当时有 11,168 条商品、无空条码，更新时间范围为 `2026-06-25 00:00:00` 至 `2026-07-12 21:14:16`。
+- 操作安全边界：未执行 `INSERT`、`UPDATE`、`DELETE`、建表、恢复、分离、附加或服务停止；正常 SQL 连接和查询仍可能被 SQL Server 日志、Trace、审计或远程运维工具记录，不做规避。
+
+### BCP 驱动冲突与外置只读导出解决
+
+- 初次使用 `D:\Espsa\SQL2000\Tools\bcp.exe` 导出时失败，错误为 `[Microsoft][ODBC SQL Server Driver]ODBCBCP/驱动程序版本不匹配`。
+- 为避免修改鸣盛安装目录，在 `D:\MS2011_PRODUCT_EXPORT_20260713` 外置目录准备 BCP 运行文件；只复制 `bcp.exe` 和对应资源文件，不复制旧 `odbcbcp.dll`，并临时让 PATH 优先使用 Windows `SysWOW64/System32` 中匹配的系统驱动。
+- 使用 Windows 身份验证和 Unicode 文本导出：`bcp ... out ... -S SERVER -T -w`。该命令只读取表数据，导出文件全部写入外置目录，没有在 Espsa 内创建文件或替换原组件。
+- 成功导出 13 张表：`MS_GOODLIST`、`MS_GOODTYPELIST`、`MS_UNITLIST`、`MS_CUXIAO_GOOD`、`MS_SALE_CXDAN1`、`MS_SALE_CXDETAIL1`、`MS_SALE_CXMASTERDING`、`MS_SALE_CXMASTERFOUR`、`MS_SALE_CXTABLE1`、`MS_SALE_CXTABLEDING`、`MS_SALE_CXTABLEFOUR`、`MS_SALE_WEEKDETAIL1`、`MS_SALE_WEEKDING`。
+- 导出随后复制到工作区：`E:\手机收银软件开发\MS2011_PRODUCT_EXPORT_20260713\MS2011_PRODUCT_EXPORT_20260713`。
+
+### 商品、分类、单位与促销数据分析
+
+- 13 个 TSV 均可按 BCP Unicode（UTF-16）读取，每行列数均与表结构一致，主键无空值、无重复，未发现完全重复行。
+- 实时 `MS_GOODLIST` 有 11,168 条商品，比 EPSA `AGT_MAIN (1).db/CJQ_GOODLIST` 的 11,141 条多 27 条，确认本次导出来自更新后的实时主库而非每日备份或旧快照。
+- 商品关键字段质量：`GID`、`GBarcode`、`GNameX` 全部非空，`GID` 和条码全部唯一，`GSalePrice` 全部大于零；`GStopFlag=0` 有 11,130 条，`GStopFlag=4` 有 38 条。
+- 分类真实关联为 `MS_GOODLIST.GClass = MS_GOODTYPELIST.RTypeCode`，20 个分类代码均能关联；单位真实关联为 `MS_GOODLIST.GUnit = MS_UNITLIST.UNumCode`，所有非空单位代码均有效，但 2,406 条商品未设置单位。
+- `GKCCount` 的 11,168 条记录全部不大于零，其中 3,729 条为负、7,439 条为零；现阶段禁止用 `GKCCount > 0` 作为商品可售条件。
+- 已识别 10 个当前日期有效的复杂促销活动和 24 条商品映射，并还原三种规则：数量百分比折扣、指定数量固定总价、同活动商品混合凑数量固定总价。
+- 原始数据异常记录：`ARCOR CHOCO 2*4000` 的 GID `6631` 有复杂活动映射但缺少定价明细；GID `3240`、`6631` 同时存在简单和复杂促销字段；11 个商品 `GHuiPrice>0` 但 `GHuiPriceCount=0`；`BLOCK CHOCO MANI 110G` 的复杂活动绑定与名称明显不符；停用商品 GID `11033` 仍保留简单促销字段。
+- 实操范围确认后，商品、分类、单位和简单促销可以进入下一步只读同步迭代；手机端只使用 `GHuiPrice/GHuiPriceCount`，复杂促销表不参与同步和结算。
+- 建议同步方式：商品及其简单促销字段按 `(GUpdateTime, GID)` 增量；分类和单位全量读取后计算快照哈希；新快照全部验证成功后原子替换。
+- 分析报告：`E:\手机收银软件开发\MS2011_商品分类单位促销数据分析.md`。
+- 复现脚本：`E:\手机收银软件开发\ESpsa_analysis\analyze_ms2011_export.py`；脚本只读取导出 TSV 和 EPSA 快照，不连接、不修改实时数据库。
+
+### 促销实操范围确认
+
+- 实际收银业务只使用 `MS_GOODLIST` 中的简单促销字段 `GHuiPrice + GHuiPriceCount`，不使用复杂促销表。
+- 因复杂促销不进入手机端数据集和价格计算，即使同一商品同时留有简单字段和复杂活动映射，也不会产生促销叠加、优先级或冲突问题。
+- 简单促销只在 `GHuiPrice > 0` 且 `GHuiPriceCount > 0` 时生效；门槛数量为空或不大于零时保留原始字段但不触发优惠。
+- `GStopFlag` 的停用状态优先于简单促销，停用商品不能因保留优惠字段而恢复为可售。
+- 原先列出的复杂促销缺明细、错误绑定等现象继续保留为数据分析证据，但不再作为当前手机收银迭代的上线阻塞项。
