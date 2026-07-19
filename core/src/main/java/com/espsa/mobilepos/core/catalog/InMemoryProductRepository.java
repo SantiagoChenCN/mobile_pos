@@ -1,6 +1,7 @@
 package com.espsa.mobilepos.core.catalog;
 
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.ProductOrigin;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -14,7 +15,6 @@ import java.util.Optional;
 
 public final class InMemoryProductRepository implements ProductRepository {
     private final Map<String, Product> byId = new HashMap<String, Product>();
-    private final Map<String, Product> byBarcode = new HashMap<String, Product>();
     private final Map<String, ProductSearchEntry> searchEntryById = new HashMap<String, ProductSearchEntry>();
     private final List<Product> products = new ArrayList<Product>();
     private final List<ProductSearchEntry> searchEntries = new ArrayList<ProductSearchEntry>();
@@ -34,10 +34,33 @@ public final class InMemoryProductRepository implements ProductRepository {
 
     @Override
     public Optional<Product> findByBarcode(String barcode) {
-        if (barcode == null) {
+        List<Product> matches = findAllByBarcode(barcode);
+        if (matches.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.ofNullable(byBarcode.get(barcode.trim()));
+        for (Product product : matches) {
+            if (product.origin() == ProductOrigin.MS2011_SYNC) {
+                // Legacy checkout callers use this normal-sale lookup. A stopped authoritative
+                // sync record must block a same-barcode LOCAL fallback until S10 presents it.
+                return product.stopped() ? Optional.<Product>empty() : Optional.of(product);
+            }
+        }
+        return Optional.of(matches.get(0));
+    }
+
+    @Override
+    public List<Product> findAllByBarcode(String barcode) {
+        if (barcode == null || barcode.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        String needle = barcode.trim();
+        List<Product> matches = new ArrayList<Product>();
+        for (Product product : products) {
+            if (needle.equals(product.barcode())) {
+                matches.add(product);
+            }
+        }
+        return Collections.unmodifiableList(matches);
     }
 
     @Override
@@ -247,26 +270,21 @@ public final class InMemoryProductRepository implements ProductRepository {
 
     private void addIndexes(Product product) {
         byId.put(product.id(), product);
-        if (!product.barcode().isEmpty()) {
-            byBarcode.put(product.barcode(), product);
+        if (!(product.origin() == ProductOrigin.MS2011_SYNC && product.stopped())) {
+            ProductSearchEntry entry = buildSearchEntry(product);
+            searchEntryById.put(product.id(), entry);
+            searchEntries.add(entry);
         }
-        ProductSearchEntry entry = buildSearchEntry(product);
-        searchEntryById.put(product.id(), entry);
-        searchEntries.add(entry);
     }
 
     private void removeIndexes(Product product) {
         byId.remove(product.id());
-        if (!product.barcode().isEmpty()) {
-            byBarcode.remove(product.barcode());
-        }
         searchEntryById.remove(product.id());
         removeSearchEntry(product.id());
     }
 
     private void clearIndexes() {
         byId.clear();
-        byBarcode.clear();
         searchEntryById.clear();
         products.clear();
         searchEntries.clear();

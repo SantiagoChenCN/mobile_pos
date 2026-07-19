@@ -10,6 +10,7 @@ import com.espsa.mobilepos.app.time.ArgentinaTime;
 import com.espsa.mobilepos.core.ledger.DailySummary;
 import com.espsa.mobilepos.core.model.PaymentMethod;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.MoneyText;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
@@ -34,15 +35,15 @@ public final class DailySummaryScreen {
         page.addView(title, Views.matchWrap());
 
         DailySummary summary = services.ledger().dailySummary(ArgentinaTime.today());
-        page.addView(metric(UiText.choose(language, "今日销售额", "Total de hoy"), "$" + summary.total().amount(), true));
+        page.addView(metric(UiText.choose(language, "今日销售额", "Total de hoy"), MoneyText.currency(summary.total()), true));
         page.addView(metric(UiText.choose(language, "订单数", "Ventas"), Integer.toString(summary.saleCount()), false));
-        page.addView(metric(UiText.choose(language, "作废单", "Anuladas"), summary.voidedCount() + " / $" + summary.voidedTotal().amount(), false));
+        page.addView(metric(UiText.choose(language, "作废单", "Anuladas"), summary.voidedCount() + " / " + MoneyText.currency(summary.voidedTotal()), false));
         page.addView(Views.divider(context));
-        page.addView(metric("Efectivo", "$" + summary.totalFor(PaymentMethod.CASH).amount(), false));
-        page.addView(metric("Mercado Pago", "$" + summary.totalFor(PaymentMethod.MERCADO_PAGO).amount(), false));
-        page.addView(metric("Debito", "$" + summary.totalFor(PaymentMethod.DEBIT_CARD).amount(), false));
-        page.addView(metric("Credito", "$" + summary.totalFor(PaymentMethod.CREDIT_CARD).amount(), false));
-        page.addView(metric("transferencia", "$" + summary.totalFor(PaymentMethod.TRANSFERENCIA).amount(), false));
+        page.addView(metric("Efectivo", MoneyText.currency(summary.totalFor(PaymentMethod.CASH)), false));
+        page.addView(metric("Mercado Pago", MoneyText.currency(summary.totalFor(PaymentMethod.MERCADO_PAGO)), false));
+        page.addView(metric("Debito", MoneyText.currency(summary.totalFor(PaymentMethod.DEBIT_CARD)), false));
+        page.addView(metric("Credito", MoneyText.currency(summary.totalFor(PaymentMethod.CREDIT_CARD)), false));
+        page.addView(metric("transferencia", MoneyText.currency(summary.totalFor(PaymentMethod.TRANSFERENCIA)), false));
         return page;
     }
 

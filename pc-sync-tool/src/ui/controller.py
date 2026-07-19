@@ -19,11 +19,13 @@ from time_display import format_argentina_time
 
 
 class UiController:
-    def __init__(self, paths: AppPaths):
+    def __init__(self, paths: AppPaths, v2_pipeline=None):
         self.paths = paths
         self.config = load_config(paths)
         self.event_log = EventLog(paths.event_log_file)
         self.service: Optional[SyncHttpService] = None
+        self.v2_pipeline = v2_pipeline
+        self.latest_v2_result = None
 
     @property
     def service_running(self) -> bool:
@@ -77,6 +79,10 @@ class UiController:
         port: int,
         selected_host: str,
         start_on_boot: bool,
+        data_source: str | None = None,
+        live_detection_interval_seconds: int | None = None,
+        sql_server: str | None = None,
+        sql_driver: str | None = None,
     ) -> SyncConfig:
         old_port = self.config.port
         old_host = self.config.selected_host
@@ -89,6 +95,14 @@ class UiController:
             port=port,
             selected_host=selected_host.strip() or "127.0.0.1",
             start_on_boot=start_on_boot,
+            data_source=data_source or self.config.data_source,
+            live_detection_interval_seconds=(
+                self.config.live_detection_interval_seconds
+                if live_detection_interval_seconds is None
+                else live_detection_interval_seconds
+            ),
+            sql_server=(sql_server or self.config.sql_server).strip(),
+            sql_driver=(sql_driver or self.config.sql_driver).strip(),
         ).validated()
         save_config(self.paths, self.config)
         self._apply_startup()
@@ -105,6 +119,12 @@ class UiController:
 
     def run_backup_once(self) -> BackupResult:
         return BackupWorker(self.paths, self.event_log).run_once(self.config)
+
+    def run_v2_sync_once(self, as_of_local):
+        if self.v2_pipeline is None:
+            raise RuntimeError("G0B_LOCKED_OR_V2_PIPELINE_NOT_CONFIGURED")
+        self.latest_v2_result = self.v2_pipeline.run_once(as_of_local)
+        return self.latest_v2_result
 
     def detect_source(self) -> SourceDatabase:
         return resolve_source(self.config)

@@ -4,7 +4,6 @@ import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Map;
 
 public final class MingshengProductMapper {
@@ -14,11 +13,11 @@ public final class MingshengProductMapper {
         String name = firstNonBlank(row, "GNameX", "GYiNameJian");
         String category = firstNonBlank(row, "RTypeName", "GType");
         String unitName = firstNonBlank(row, "UName", "GUNIT");
-        Money salePrice = Money.of(parseAmount(text(row, "GSalePrice")));
+        Money salePrice = parseMoney(text(row, "GSalePrice"));
 
-        long promotionAmount = parseAmount(text(row, "GHuiPrice"));
-        int promotionMinQuantity = (int) parseAmount(text(row, "GHuiPriceCount"));
-        Money promotionPrice = promotionAmount > 0 && promotionMinQuantity > 0 ? Money.of(promotionAmount) : null;
+        Money promotionAmount = parseMoney(text(row, "GHuiPrice"));
+        int promotionMinQuantity = parseIntegerQuantity(text(row, "GHuiPriceCount"));
+        Money promotionPrice = !promotionAmount.isZero() && promotionMinQuantity > 0 ? promotionAmount : null;
 
         return new Product(
                 id,
@@ -49,14 +48,18 @@ public final class MingshengProductMapper {
         return value == null ? "" : value.trim();
     }
 
-    private long parseAmount(String value) {
+    private Money parseMoney(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return Money.ZERO;
+        }
+        return Money.of(value.trim());
+    }
+
+    private int parseIntegerQuantity(String value) {
         if (value == null || value.trim().isEmpty()) {
             return 0;
         }
-        try {
-            return new BigDecimal(value.trim()).setScale(0, RoundingMode.HALF_UP).longValueExact();
-        } catch (ArithmeticException ex) {
-            return Math.round(Double.parseDouble(value.trim()));
-        }
+        BigDecimal quantity = new BigDecimal(value.trim());
+        return quantity.stripTrailingZeros().intValueExact();
     }
 }

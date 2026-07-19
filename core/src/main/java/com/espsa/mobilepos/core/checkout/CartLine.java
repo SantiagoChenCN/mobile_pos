@@ -3,6 +3,7 @@ package com.espsa.mobilepos.core.checkout;
 import com.espsa.mobilepos.core.model.Discount;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.Quantity;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -10,21 +11,18 @@ import java.util.UUID;
 public final class CartLine {
     private final String id;
     private final Product product;
-    private final int quantity;
+    private final Quantity quantity;
     private final Money manualUnitPrice;
     private final Discount lineDiscount;
 
-    public CartLine(Product product, int quantity) {
+    public CartLine(Product product, Quantity quantity) {
         this(UUID.randomUUID().toString(), product, quantity, null, Discount.NONE);
     }
 
-    public CartLine(String id, Product product, int quantity, Money manualUnitPrice, Discount lineDiscount) {
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("Quantity must be greater than zero");
-        }
+    public CartLine(String id, Product product, Quantity quantity, Money manualUnitPrice, Discount lineDiscount) {
         this.id = id == null || id.trim().isEmpty() ? UUID.randomUUID().toString() : id;
         this.product = Objects.requireNonNull(product, "product");
-        this.quantity = quantity;
+        this.quantity = Objects.requireNonNull(quantity, "quantity");
         this.manualUnitPrice = manualUnitPrice;
         this.lineDiscount = lineDiscount == null ? Discount.NONE : lineDiscount;
     }
@@ -37,7 +35,7 @@ public final class CartLine {
         return product;
     }
 
-    public int quantity() {
+    public Quantity quantityValue() {
         return quantity;
     }
 
@@ -49,7 +47,7 @@ public final class CartLine {
         return lineDiscount;
     }
 
-    public CartLine withQuantity(int newQuantity) {
+    public CartLine withQuantity(Quantity newQuantity) {
         return new CartLine(id, product, newQuantity, manualUnitPrice, lineDiscount);
     }
 

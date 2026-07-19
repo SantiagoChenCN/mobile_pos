@@ -25,16 +25,21 @@ import com.espsa.mobilepos.core.model.Discount;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.PaymentMethod;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.Quantity;
 import com.espsa.mobilepos.core.pricing.CartPriceResult;
 import com.espsa.mobilepos.core.pricing.LinePriceResult;
 import com.espsa.mobilepos.ui.AppLanguage;
 import com.espsa.mobilepos.ui.CashPaymentDialog;
 import com.espsa.mobilepos.ui.KeyboardActions;
+import com.espsa.mobilepos.ui.MoneyText;
+import com.espsa.mobilepos.ui.NumberTextParser;
 import com.espsa.mobilepos.ui.ProductSearchResultDialog;
+import com.espsa.mobilepos.ui.QuantityText;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public final class CheckoutScreen {
@@ -115,7 +120,7 @@ public final class CheckoutScreen {
             return;
         }
         try {
-            services.checkout().addProductByBarcode(cart, barcode.trim(), 1);
+            services.checkout().addProductByBarcode(cart, barcode.trim(), Quantity.one());
             refreshCart();
             Toast.makeText(context, barcode.trim(), Toast.LENGTH_SHORT).show();
         } catch (ProductNotFoundException ex) {
@@ -127,7 +132,7 @@ public final class CheckoutScreen {
         LinearLayout panel = Views.vertical(context);
         panel.setPadding(0, 8, 0, 0);
 
-        totalText = Views.text(context, "$0", 34, StyleGuide.INK);
+        totalText = Views.text(context, MoneyText.currency(Money.ZERO), 34, StyleGuide.INK);
         StyleGuide.total(totalText);
         panel.addView(totalText, Views.matchWrap());
 
@@ -192,7 +197,7 @@ public final class CheckoutScreen {
             return;
         }
         try {
-            services.checkout().addProductByBarcode(cart, barcode, 1);
+            services.checkout().addProductByBarcode(cart, barcode, Quantity.one());
             barcodeInput.setText("");
             refreshCart();
         } catch (ProductNotFoundException ex) {
@@ -214,7 +219,7 @@ public final class CheckoutScreen {
                 cartContainer.addView(Views.divider(context));
             }
         }
-        totalText.setText("$" + price.total().amount());
+        totalText.setText(MoneyText.currency(price.total()));
     }
 
     private View lineView(LinePriceResult linePrice) {
@@ -231,7 +236,7 @@ public final class CheckoutScreen {
 
         TextView meta = Views.text(
                 context,
-                line.product().barcode() + "  x" + line.quantity() + "  $" + linePrice.appliedUnitPrice().amount() + "  = $" + linePrice.finalSubtotal().amount(),
+                line.product().barcode() + "  x" + QuantityText.format(line.quantityValue()) + "  " + MoneyText.currency(linePrice.appliedUnitPrice()) + "  = " + MoneyText.currency(linePrice.finalSubtotal()),
                 14,
                 StyleGuide.MUTED
         );
@@ -257,7 +262,7 @@ public final class CheckoutScreen {
         if (linePrice.manualPriceApplied()) {
             markers.append(UiText.choose(language, "已改价", "Precio editado"));
         }
-        if (linePrice.lineDiscountAmount().amount() > 0) {
+        if (linePrice.lineDiscountAmount().compareTo(Money.ZERO) > 0) {
             if (markers.length() > 0) {
                 markers.append("  ");
             }
@@ -283,17 +288,19 @@ public final class CheckoutScreen {
 
         TextView meta = Views.text(
                 context,
-                line.product().barcode() + "  x" + line.quantity() + "  $" + linePrice.appliedUnitPrice().amount() + "  = $" + linePrice.finalSubtotal().amount(),
+                line.product().barcode() + "  x" + QuantityText.format(line.quantityValue()) + "  " + MoneyText.currency(linePrice.appliedUnitPrice()) + "  = " + MoneyText.currency(linePrice.finalSubtotal()),
                 14,
                 StyleGuide.MUTED
         );
         panel.addView(meta, Views.matchWrap());
 
         final AlertDialog[] dialogRef = new AlertDialog[1];
-        LinearLayout quantityRow = Views.horizontal(context);
-        quantityRow.addView(lineActionButton("-", () -> changeLineQuantity(line, -1), dialogRef), Views.weight(1));
-        quantityRow.addView(lineActionButton("+", () -> changeLineQuantity(line, 1), dialogRef), Views.weight(1));
-        panel.addView(quantityRow, Views.matchWrap());
+        Button quantity = lineActionButton(
+                UiText.choose(language, "修改数量", "Cambiar cantidad"),
+                () -> showLineQuantityDialog(line),
+                dialogRef
+        );
+        panel.addView(quantity, Views.matchWrap());
 
         LinearLayout editRow = Views.horizontal(context);
         editRow.addView(lineActionButton(UiText.choose(language, "改价", "Precio"), () -> showLinePriceDialog(line), dialogRef), Views.weight(1));
@@ -332,16 +339,6 @@ public final class CheckoutScreen {
         return button;
     }
 
-    private void changeLineQuantity(CartLine line, int delta) {
-        int newQuantity = line.quantity() + delta;
-        if (newQuantity <= 0) {
-            cart.removeLine(line.id());
-        } else {
-            cart.replaceLine(line.withQuantity(newQuantity));
-        }
-        refreshCart();
-    }
-
     private int dp(int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
@@ -356,16 +353,16 @@ public final class CheckoutScreen {
 
     private void showManualPriceDialog() {
         EditText price = Views.editText(context);
-        price.setInputType(InputType.TYPE_CLASS_NUMBER);
+        price.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         price.setHint("0");
         new AlertDialog.Builder(context)
                 .setTitle(UiText.choose(language, "手动价格 almacén", "Precio manual almacen"))
                 .setView(price)
                 .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
                 .setPositiveButton(UiText.choose(language, "加入", "Agregar"), (dialog, which) -> {
-                    long amount = parseAmount(price.getText().toString());
-                    if (amount > 0) {
-                        services.checkout().addManualAlmacenItem(cart, Money.of(amount), 1);
+                    Money amount = NumberTextParser.parseMoneyOrNull(price.getText().toString());
+                    if (amount != null && !amount.isZero()) {
+                        services.checkout().addManualAlmacenItem(cart, amount, Quantity.one());
                         refreshCart();
                     }
                 })
@@ -374,8 +371,8 @@ public final class CheckoutScreen {
 
     private void showLinePriceDialog(CartLine line) {
         EditText price = Views.editText(context);
-        price.setInputType(InputType.TYPE_CLASS_NUMBER);
-        price.setHint(Long.toString(line.product().salePrice().amount()));
+        price.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        price.setHint(MoneyText.format(line.product().salePrice()));
         new AlertDialog.Builder(context)
                 .setTitle(UiText.choose(language, "修改这一行单价", "Cambiar precio"))
                 .setView(price)
@@ -385,9 +382,9 @@ public final class CheckoutScreen {
                     refreshCart();
                 })
                 .setPositiveButton(UiText.choose(language, "保存", "Guardar"), (dialog, which) -> {
-                    long amount = parseAmount(price.getText().toString());
-                    if (amount > 0) {
-                        cart.replaceLine(line.withManualUnitPrice(Money.of(amount)));
+                    Money amount = NumberTextParser.parseMoneyOrNull(price.getText().toString());
+                    if (amount != null && !amount.isZero()) {
+                        cart.replaceLine(line.withManualUnitPrice(amount));
                         refreshCart();
                     }
                 })
@@ -395,29 +392,29 @@ public final class CheckoutScreen {
     }
 
     private void showCartPercentDiscountDialog() {
-        showPercentDialog(UiText.choose(language, "整单百分比优惠", "Descuento total %"), basisPoints -> {
-            cart.setCartDiscount(Discount.percent(basisPoints));
+        showPercentDialog(UiText.choose(language, "整单百分比优惠", "Descuento total %"), percentage -> {
+            cart.setCartDiscount(Discount.percent(percentage));
             refreshCart();
         });
     }
 
     private void showCartFixedDiscountDialog() {
         showAmountDialog(UiText.choose(language, "整单固定减价", "Descuento total $"), amount -> {
-            cart.setCartDiscount(Discount.fixedAmount(Money.of(amount)));
+            cart.setCartDiscount(Discount.fixedAmount(amount));
             refreshCart();
         });
     }
 
     private void showLinePercentDiscountDialog(CartLine line) {
-        showPercentDialog(UiText.choose(language, "这一行百分比优惠", "Descuento de item %"), basisPoints -> {
-            cart.replaceLine(line.withLineDiscount(Discount.percent(basisPoints)));
+        showPercentDialog(UiText.choose(language, "这一行百分比优惠", "Descuento de item %"), percentage -> {
+            cart.replaceLine(line.withLineDiscount(Discount.percent(percentage)));
             refreshCart();
         });
     }
 
     private void showLineFixedDiscountDialog(CartLine line) {
         showAmountDialog(UiText.choose(language, "这一行固定减价", "Descuento de item $"), amount -> {
-            cart.replaceLine(line.withLineDiscount(Discount.fixedAmount(Money.of(amount))));
+            cart.replaceLine(line.withLineDiscount(Discount.fixedAmount(amount)));
             refreshCart();
         });
     }
@@ -431,9 +428,9 @@ public final class CheckoutScreen {
                 .setView(input)
                 .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
                 .setPositiveButton(UiText.choose(language, "保存", "Guardar"), (dialog, which) -> {
-                    int basisPoints = parsePercentBasisPoints(input.getText().toString());
-                    if (basisPoints > 0) {
-                        callback.apply(basisPoints);
+                    BigDecimal percentage = NumberTextParser.parsePercentageOrNull(input.getText().toString());
+                    if (percentage != null) {
+                        callback.apply(percentage);
                     }
                 })
                 .show();
@@ -441,15 +438,15 @@ public final class CheckoutScreen {
 
     private void showAmountDialog(String title, AmountCallback callback) {
         EditText input = Views.editText(context);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         input.setHint("100");
         new AlertDialog.Builder(context)
                 .setTitle(title)
                 .setView(input)
                 .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
                 .setPositiveButton(UiText.choose(language, "保存", "Guardar"), (dialog, which) -> {
-                    long amount = parseAmount(input.getText().toString());
-                    if (amount > 0) {
+                    Money amount = NumberTextParser.parseMoneyOrNull(input.getText().toString());
+                    if (amount != null && !amount.isZero()) {
                         callback.apply(amount);
                     }
                 })
@@ -506,8 +503,52 @@ public final class CheckoutScreen {
     }
 
     private void addSearchResultToCart(Product product) {
-        cart.addProduct(product, 1);
-        refreshCart();
+        showQuantityDialog(
+                UiText.choose(language, "加入数量", "Cantidad a agregar"),
+                Quantity.one(),
+                quantity -> {
+                    cart.addProduct(product, quantity);
+                    refreshCart();
+                }
+        );
+    }
+
+    private void showLineQuantityDialog(CartLine line) {
+        showQuantityDialog(
+                UiText.choose(language, "修改数量", "Cambiar cantidad"),
+                line.quantityValue(),
+                quantity -> {
+                    cart.replaceLine(line.withQuantity(quantity));
+                    refreshCart();
+                }
+        );
+    }
+
+    private void showQuantityDialog(String title, Quantity initial, QuantityCallback callback) {
+        EditText input = Views.editText(context);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText(QuantityText.format(initial));
+        input.selectAll();
+
+        AlertDialog dialog = new AlertDialog.Builder(context)
+                .setTitle(title)
+                .setView(input)
+                .setNegativeButton(UiText.choose(language, "取消", "Cancelar"), null)
+                .setPositiveButton(UiText.choose(language, "保存", "Guardar"), null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    boolean applied = QuantityText.applyIfValid(
+                            input.getText().toString(),
+                            callback::apply
+                    );
+                    if (!applied) {
+                        input.setError("数量无效 / Cantidad invalida");
+                        return;
+                    }
+                    dialog.dismiss();
+                }));
+        dialog.show();
     }
 
     private void checkout() {
@@ -542,38 +583,15 @@ public final class CheckoutScreen {
         }
     }
 
-    private long parseAmount(String raw) {
-        if (raw == null || raw.trim().isEmpty()) {
-            return 0;
-        }
-        try {
-            return Long.parseLong(raw.trim());
-        } catch (NumberFormatException ex) {
-            return 0;
-        }
-    }
-
-    private int parsePercentBasisPoints(String raw) {
-        if (raw == null || raw.trim().isEmpty()) {
-            return 0;
-        }
-        try {
-            String normalized = raw.trim().replace(',', '.');
-            double percent = Double.parseDouble(normalized);
-            if (percent <= 0 || percent > 100) {
-                return 0;
-            }
-            return (int) Math.round(percent * 100);
-        } catch (NumberFormatException ex) {
-            return 0;
-        }
-    }
-
     private interface PercentCallback {
-        void apply(int basisPoints);
+        void apply(BigDecimal percentage);
     }
 
     private interface AmountCallback {
-        void apply(long amount);
+        void apply(Money amount);
+    }
+
+    private interface QuantityCallback {
+        void apply(Quantity quantity);
     }
 }

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "derived": [
+    {"kind": "candidate", "sourceType": "MS_GOODLIST", "canonicalSourceKey": "7318", "id": "pc-1f03e4ee190b6df903dc7ddf"},
+    {"kind": "mapping", "sourceType": "MS_CUXIAO_GOOD", "canonicalSourceKey": "6:7318", "id": "map-217f524fa87a376937c89acb"},
+    {"kind": "tier", "sourceType": "MS_SALE_CXDETAIL1", "canonicalSourceKey": "6:1", "id": "tier-ebb77aad935bde305a09c124"},
+    {"kind": "schedule", "sourceType": "MS_SALE_CXTABLEDING", "canonicalSourceKey": "6:1", "id": "schedule-3328dff18c0d065278d2e40e"},
+    {"kind": "group", "sourceType": "MS_SALE_CXMASTERFOUR", "canonicalSourceKey": "1:A", "id": "group-775bf544c18dadcea83c48c1"}
+  ],
+  "invalidSnapshotIds": [
+    "../snapshot",
+    "ms2011-20260717T180001Z-ABCDEF123456",
+    "ms2011-20260717T180001Z-abcdef12345/",
+    "ms2011-20260717T180001Z-abcdef123456.db",
+    "ms2011-20261317T180001Z-abcdef123456",
+    "ms2011-20260230T120000Z-abcdef123456",
+    "ms2011-20250229T120000Z-abcdef123456",
+    "ms2011-20260228T240000Z-abcdef123456",
+    "ms2011-20260228T126000Z-abcdef123456",
+    "ms2011-20260228T125960Z-abcdef123456",
+    "ms2011-%2e%2e-abcdef123456"
+  ]
+}

@@ -2,13 +2,16 @@ package com.espsa.mobilepos.core.ledger;
 
 import com.espsa.mobilepos.core.model.Discount;
 import com.espsa.mobilepos.core.model.Money;
+import com.espsa.mobilepos.core.model.Quantity;
+
+import java.util.Objects;
 
 public final class SaleLine {
     private final String productId;
     private final String barcode;
     private final String name;
     private final String category;
-    private final int quantity;
+    private final Quantity quantity;
     private final Money originalUnitPrice;
     private final Money appliedUnitPrice;
     private final Money grossSubtotal;
@@ -24,7 +27,7 @@ public final class SaleLine {
             String barcode,
             String name,
             String category,
-            int quantity,
+            Quantity quantity,
             Money originalUnitPrice,
             Money appliedUnitPrice,
             Money grossSubtotal,
@@ -39,7 +42,7 @@ public final class SaleLine {
         this.barcode = barcode;
         this.name = name;
         this.category = category;
-        this.quantity = quantity;
+        this.quantity = Objects.requireNonNull(quantity, "quantity");
         this.originalUnitPrice = originalUnitPrice;
         this.appliedUnitPrice = appliedUnitPrice;
         this.grossSubtotal = grossSubtotal;
@@ -67,7 +70,7 @@ public final class SaleLine {
         return category;
     }
 
-    public int quantity() {
+    public Quantity quantity() {
         return quantity;
     }
 
@@ -107,4 +110,3 @@ public final class SaleLine {
         return manualPriceProduct;
     }
 }
-

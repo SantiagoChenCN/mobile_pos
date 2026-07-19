@@ -2,9 +2,12 @@ package com.espsa.mobilepos.app.sync;
 
 import android.content.Context;
 
+import com.espsa.mobilepos.core.model.V2Contract;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.time.Instant;
 
@@ -49,6 +52,12 @@ public final class ComputerSyncService {
         return manifest;
     }
 
+    public ComputerSyncManifestV2 checkManifestV2(Context context) throws ComputerSyncException {
+        ComputerSyncManifestV2 manifest = client.manifestV2(requireConfig(context));
+        validateMinimumAppVersion(context, manifest);
+        return manifest;
+    }
+
     public boolean hasNewVersion(Context context, ComputerSyncManifest manifest) {
         if (manifest == null || !manifest.ok() || manifest.sha256().isEmpty()) {
             return false;
@@ -67,6 +76,44 @@ public final class ComputerSyncService {
             throw new ComputerSyncException("下载文件校验失败，请重新同步");
         }
         return target;
+    }
+
+    public File downloadV2Database(Context context, ComputerSyncManifestV2 manifest) throws ComputerSyncException {
+        return downloadV2Database(context, manifest, new ComputerSyncClient.V2DownloadCancellation());
+    }
+
+    public File downloadV2Database(
+            Context context,
+            ComputerSyncManifestV2 manifest,
+            ComputerSyncClient.V2DownloadCancellation cancellation
+    ) throws ComputerSyncException {
+        ComputerSyncConfig config = requireConfig(context);
+        if (manifest == null) {
+            throw new ComputerSyncException(ComputerSyncFailureReason.INVALID_RESPONSE, "电脑端未返回 v2 manifest");
+        }
+        validateMinimumAppVersion(context, manifest);
+        File directory = v2TemporaryDirectory(context);
+        validateV2DownloadSpace(manifest, directory.getUsableSpace());
+        File target = null;
+        boolean complete = false;
+        try {
+            target = client.downloadV2Snapshot(context, config, manifest, cancellation);
+            throwIfCancelled(cancellation);
+            if (target.length() != manifest.sizeBytes()
+                    || !sha256(target, cancellation).equals(manifest.sha256())) {
+                throw new ComputerSyncException(
+                        ComputerSyncFailureReason.INVALID_RESPONSE,
+                        "下载的 v2 快照与 manifest 不一致"
+                );
+            }
+            throwIfCancelled(cancellation);
+            complete = true;
+            return target;
+        } finally {
+            if (!complete) {
+                deleteV2TemporaryFile(directory, target);
+            }
+        }
     }
 
     public void markSynced(Context context, ComputerSyncManifest manifest) {
@@ -139,26 +186,121 @@ public final class ComputerSyncService {
         return file;
     }
 
-    private String sha256(File file) throws ComputerSyncException {
+    static void validateV2DownloadSpace(ComputerSyncManifestV2 manifest, long availableBytes)
+            throws ComputerSyncException {
+        if (manifest == null) {
+            throw new ComputerSyncException(ComputerSyncFailureReason.INVALID_RESPONSE, "电脑端未返回 v2 manifest");
+        }
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            BufferedInputStream input = new BufferedInputStream(new FileInputStream(file));
-            try {
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = input.read(buffer)) != -1) {
-                    digest.update(buffer, 0, read);
-                }
-            } finally {
-                input.close();
+            long size = manifest.sizeBytes();
+            V2Contract.requireDownloadSpace(availableBytes, size, size, size, size);
+        } catch (IllegalArgumentException exception) {
+            throw new ComputerSyncException(
+                    ComputerSyncFailureReason.INVALID_RESPONSE,
+                    "可用空间不足，无法安全下载 v2 快照",
+                    exception
+            );
+        }
+    }
+
+    private void validateMinimumAppVersion(Context context, ComputerSyncManifestV2 manifest)
+            throws ComputerSyncException {
+        try {
+            long installedVersion = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0)
+                    .getLongVersionCode();
+            if (manifest.minimumAppVersion() > installedVersion) {
+                throw new ComputerSyncException(
+                        ComputerSyncFailureReason.INVALID_RESPONSE,
+                        "电脑端 v2 快照需要更新应用后才能导入"
+                );
             }
-            return hex(digest.digest());
+        } catch (ComputerSyncException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ComputerSyncException(
+                    ComputerSyncFailureReason.INVALID_RESPONSE,
+                    "无法确认当前应用版本",
+                    exception
+            );
+        }
+    }
+
+    private File v2TemporaryDirectory(Context context) throws ComputerSyncException {
+        File directory = new File(context.getCacheDir(), "computer-sync-v2/tmp");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new ComputerSyncException("无法创建 v2 快照临时目录");
+        }
+        return directory;
+    }
+
+    private void deleteV2TemporaryFile(File directory, File temporaryFile) throws ComputerSyncException {
+        try {
+            if (temporaryFile == null || directory == null) {
+                return;
+            }
+            File canonicalDirectory = directory.getCanonicalFile();
+            File canonicalTemporary = temporaryFile.getCanonicalFile();
+            if (!canonicalDirectory.equals(canonicalTemporary.getParentFile())
+                    || !canonicalTemporary.getName().startsWith("snapshot-v2-")
+                    || !canonicalTemporary.getName().endsWith(".part")) {
+                throw new ComputerSyncException(
+                        ComputerSyncFailureReason.INVALID_RESPONSE,
+                        "拒绝清理不属于 v2 临时目录的文件"
+                );
+            }
+            if (canonicalTemporary.exists() && (!canonicalTemporary.isFile() || !canonicalTemporary.delete())) {
+                throw new ComputerSyncException(ComputerSyncFailureReason.INVALID_RESPONSE, "无法清理 v2 临时文件");
+            }
+        } catch (ComputerSyncException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ComputerSyncException(
+                    ComputerSyncFailureReason.INVALID_RESPONSE,
+                    "无法确认 v2 临时文件归属",
+                    exception
+            );
+        }
+    }
+
+    private String sha256(File file) throws ComputerSyncException {
+        return sha256(file, null);
+    }
+
+    private String sha256(File file, ComputerSyncClient.V2DownloadCancellation cancellation) throws ComputerSyncException {
+        try {
+            return sha256Stream(new FileInputStream(file), cancellation);
+        } catch (ComputerSyncException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new ComputerSyncException("计算下载文件 SHA-256 失败", ex);
         }
     }
 
-    private String hex(byte[] bytes) {
+    static String sha256Stream(
+            InputStream source,
+            ComputerSyncClient.V2DownloadCancellation cancellation
+    ) throws ComputerSyncException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (BufferedInputStream input = new BufferedInputStream(source)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    throwIfCancelled(cancellation);
+                    digest.update(buffer, 0, read);
+                }
+                throwIfCancelled(cancellation);
+            }
+            return hex(digest.digest());
+        } catch (ComputerSyncException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ComputerSyncException("计算下载文件 SHA-256 失败", ex);
+        }
+    }
+
+    private static String hex(byte[] bytes) {
         StringBuilder builder = new StringBuilder();
         for (byte value : bytes) {
             builder.append(String.format("%02x", value & 0xff));
@@ -168,5 +310,14 @@ public final class ComputerSyncService {
 
     private String nowIso() {
         return Instant.now().toString();
+    }
+
+    private static void throwIfCancelled(ComputerSyncClient.V2DownloadCancellation cancellation) throws ComputerSyncException {
+        if (Thread.currentThread().isInterrupted() || (cancellation != null && cancellation.cancelled())) {
+            throw new ComputerSyncException(
+                    ComputerSyncFailureReason.UNKNOWN,
+                    "v2 快照下载已取消"
+            );
+        }
     }
 }

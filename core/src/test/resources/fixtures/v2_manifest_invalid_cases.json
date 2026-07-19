@@ -1,0 +1,16 @@
+[
+  {"name": "ok-string", "operation": "set", "field": "ok", "value": "true"},
+  {"name": "schema-version", "operation": "set", "field": "schemaVersion", "value": 1},
+  {"name": "source-type", "operation": "set", "field": "sourceType", "value": "legacy_sqlite"},
+  {"name": "local-created-time", "operation": "set", "field": "createdAtUtc", "value": "2026-07-17T15:00:01-03:00"},
+  {"name": "uppercase-hash", "operation": "set", "field": "sha256", "value": "ABCDEF1234560000000000000000000000000000000000000000000000000000"},
+  {"name": "negative-size", "operation": "set", "field": "sizeBytes", "value": -1},
+  {"name": "float-count", "operation": "set", "field": "productCount", "value": 1.5},
+  {"name": "zero-version-code", "operation": "set", "field": "minimumAppVersion", "value": 0},
+  {"name": "category-count-int32-overflow", "operation": "set", "field": "categoryCount", "value": 2147483648},
+  {"name": "unit-count-int32-overflow", "operation": "set", "field": "unitCount", "value": 2147483648},
+  {"name": "minimum-app-version-int32-overflow", "operation": "set", "field": "minimumAppVersion", "value": 2147483648},
+  {"name": "wrong-download-path", "operation": "set", "field": "downloadPath", "value": "/v2/snapshots/latest.db"},
+  {"name": "missing-field", "operation": "remove", "field": "unitCount"},
+  {"name": "secret-extra-field", "operation": "add", "field": "sqlServer", "value": "SERVER"}
+]

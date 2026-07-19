@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import struct
+from datetime import datetime
 from typing import Dict
+from zoneinfo import ZoneInfo
 
 from PySide6.QtCore import QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QFont, QIcon
@@ -29,7 +32,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.connection_presentation import ConnectionPresentation, present_connection
+from ui.connection_presentation import (
+    ConnectionPresentation,
+    present_connection,
+    present_live_sync,
+)
 from ui.controller import UiController
 from ui.network import candidate_lan_hosts
 from time_display import format_argentina_time
@@ -41,6 +48,14 @@ INTERVAL_LABELS: Dict[int, str] = {
     15: "15 分钟",
     30: "30 分钟",
     60: "60 分钟",
+}
+
+LIVE_INTERVAL_LABELS: Dict[int, str] = {
+    0: "关闭",
+    5: "5 秒",
+    15: "15 秒",
+    30: "30 秒",
+    60: "60 秒",
 }
 
 
@@ -60,12 +75,46 @@ class BackupThread(QThread):
             self.failed_with_message.emit(str(exc))
 
 
+class ConnectionTestThread(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, probe, parent=None):
+        super().__init__(parent)
+        self.probe = probe
+
+    def run(self) -> None:
+        try:
+            self.completed.emit(self.probe())
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class LiveSyncThread(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, controller: UiController, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+
+    def run(self) -> None:
+        try:
+            now_art = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+            self.completed.emit(self.controller.run_v2_sync_once(now_art))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, controller: UiController):
+    def __init__(self, controller: UiController, live_connection_probe=None):
         super().__init__()
         self.controller = controller
         self._exiting = False
         self._backup_thread = None
+        self._connection_test_thread = None
+        self._live_sync_thread = None
+        self._live_connection_probe = live_connection_probe or self._locked_connection_probe
         self._connection_presentation: ConnectionPresentation | None = None
         self._service_start_error = ""
         self._build_ui()
@@ -111,6 +160,7 @@ class MainWindow(QMainWindow):
         content.addWidget(self._backup_group(), 1, 1)
         content.addWidget(self._connection_group(), 2, 0)
         content.addWidget(self._log_group(), 2, 1)
+        content.addWidget(self._live_sync_group(), 3, 0, 1, 2)
         content.setColumnStretch(0, 1)
         content.setColumnStretch(1, 1)
         root_layout.addLayout(content, 1)
@@ -323,6 +373,71 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.log_list)
         return group
 
+    def _live_sync_group(self) -> QGroupBox:
+        group = QGroupBox("MS2011 实时同步（v2）")
+        layout = QGridLayout(group)
+        self.data_source_combo = QComboBox()
+        self.data_source_combo.addItem("旧 AGT_MAIN 文件备份", "legacy_sqlite")
+        self.data_source_combo.addItem("MS2011 实时读取", "ms2011_live")
+        self.sql_server_edit = QLineEdit()
+        self.sql_driver_edit = QLineEdit()
+        self.live_interval_combo = QComboBox()
+        for seconds, label in LIVE_INTERVAL_LABELS.items():
+            self.live_interval_combo.addItem(label, seconds)
+
+        self.driver_bits_label = QLabel(f"{struct.calcsize('P') * 8} 位进程")
+        self.readonly_capability_label = QLabel("G0B 未通过：真实 MS2011 连接与自动读取已锁定")
+        self.readonly_capability_label.setWordWrap(True)
+        self.readonly_capability_label.setStyleSheet("color: #a24624; font-weight: 700;")
+        self.test_live_connection_button = QPushButton("只读连接测试")
+        self.live_connection_result_label = QLabel("未测试（门禁锁定）")
+        self.live_connection_result_label.setWordWrap(True)
+        self.live_sync_now_button = QPushButton("立即同步")
+        self.live_cancel_button = QPushButton("取消等待")
+
+        self.live_phase_label = QLabel("LOCKED")
+        self.live_elapsed_label = QLabel("0.00 秒")
+        self.live_failures_label = QLabel("0")
+        self.live_circuit_label = QLabel("CLOSED")
+        self.live_last_success_label = QLabel("无")
+        self.live_snapshot_label = QLabel("无")
+        self.live_snapshot_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.live_counts_label = QLabel("商品 0 / 候选 0 / 问题 0")
+
+        layout.addWidget(QLabel("数据源"), 0, 0)
+        layout.addWidget(self.data_source_combo, 0, 1)
+        layout.addWidget(QLabel("检测周期"), 0, 2)
+        layout.addWidget(self.live_interval_combo, 0, 3)
+        layout.addWidget(QLabel("SQL Server"), 1, 0)
+        layout.addWidget(self.sql_server_edit, 1, 1)
+        layout.addWidget(QLabel("ODBC 驱动"), 1, 2)
+        layout.addWidget(self.sql_driver_edit, 1, 3)
+        layout.addWidget(QLabel("驱动位数"), 2, 0)
+        layout.addWidget(self.driver_bits_label, 2, 1)
+        layout.addWidget(QLabel("安全能力"), 2, 2)
+        layout.addWidget(self.readonly_capability_label, 2, 3)
+        layout.addWidget(self.test_live_connection_button, 3, 0)
+        layout.addWidget(self.live_connection_result_label, 3, 1, 1, 3)
+        layout.addWidget(QLabel("阶段"), 4, 0)
+        layout.addWidget(self.live_phase_label, 4, 1)
+        layout.addWidget(QLabel("耗时"), 4, 2)
+        layout.addWidget(self.live_elapsed_label, 4, 3)
+        layout.addWidget(QLabel("连续失败"), 5, 0)
+        layout.addWidget(self.live_failures_label, 5, 1)
+        layout.addWidget(QLabel("熔断"), 5, 2)
+        layout.addWidget(self.live_circuit_label, 5, 3)
+        layout.addWidget(QLabel("最近成功"), 6, 0)
+        layout.addWidget(self.live_last_success_label, 6, 1, 1, 3)
+        layout.addWidget(QLabel("快照 ID"), 7, 0)
+        layout.addWidget(self.live_snapshot_label, 7, 1, 1, 3)
+        layout.addWidget(QLabel("计数"), 8, 0)
+        layout.addWidget(self.live_counts_label, 8, 1, 1, 3)
+        layout.addWidget(self.live_sync_now_button, 9, 2)
+        layout.addWidget(self.live_cancel_button, 9, 3)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(3, 1)
+        return group
+
     def _build_tray(self) -> None:
         self.tray = QSystemTrayIcon(self._app_icon(), self)
         menu = QMenu()
@@ -353,6 +468,9 @@ class MainWindow(QMainWindow):
         self.copy_connection_card_button.clicked.connect(self.copy_connection_info)
         self.copy_host_button.clicked.connect(self.copy_host)
         self.copy_token_button.clicked.connect(self.copy_token)
+        self.test_live_connection_button.clicked.connect(self.test_live_connection)
+        self.live_sync_now_button.clicked.connect(self.start_live_sync)
+        self.live_cancel_button.clicked.connect(self.cancel_live_wait)
         self.tray_open_action.triggered.connect(self.show_and_raise)
         self.tray_backup_action.triggered.connect(self.start_backup)
         self.tray_copy_action.triggered.connect(self.copy_connection_info)
@@ -373,6 +491,12 @@ class MainWindow(QMainWindow):
         self.host_combo.setCurrentText(config.selected_host)
         self.token_edit.setText(config.token)
         self.start_on_boot_check.setChecked(config.start_on_boot)
+        self.data_source_combo.setCurrentIndex(self.data_source_combo.findData(config.data_source))
+        self.live_interval_combo.setCurrentIndex(
+            self.live_interval_combo.findData(config.live_detection_interval_seconds)
+        )
+        self.sql_server_edit.setText(config.sql_server)
+        self.sql_driver_edit.setText(config.sql_driver)
         self._update_source_controls()
         self.refresh_connection_info()
 
@@ -420,6 +544,10 @@ class MainWindow(QMainWindow):
                 port=int(self.port_spin.value()),
                 selected_host=self._selected_host_from_combo(),
                 start_on_boot=self.start_on_boot_check.isChecked(),
+                data_source=self.data_source_combo.currentData(),
+                live_detection_interval_seconds=int(self.live_interval_combo.currentData()),
+                sql_server=self.sql_server_edit.text(),
+                sql_driver=self.sql_driver_edit.text(),
             )
             self._service_start_error = ""
             self._configure_backup_timer()
@@ -484,6 +612,85 @@ class MainWindow(QMainWindow):
         self.last_error_label.setText(message)
         self.refresh_status()
 
+    def _locked_connection_probe(self):
+        return {
+            "status": "locked",
+            "reasonCode": "G0B_LOCKED_WRITE_CAPABILITY_PRESENT",
+            "readOnly": False,
+        }
+
+    def test_live_connection(self) -> None:
+        if self._connection_test_thread is not None and self._connection_test_thread.isRunning():
+            return
+        self.test_live_connection_button.setEnabled(False)
+        self.live_connection_result_label.setText("测试中…")
+        thread = ConnectionTestThread(self._live_connection_probe, self)
+        self._connection_test_thread = thread
+        thread.completed.connect(self._connection_test_finished)
+        thread.failed.connect(self._connection_test_failed)
+        thread.finished.connect(self._connection_test_stopped)
+        thread.start()
+
+    def _connection_test_finished(self, result) -> None:
+        if isinstance(result, dict):
+            status = str(result.get("status", "unknown"))
+            reason = str(result.get("reasonCode", result.get("reason_code", "")))
+            read_only = bool(result.get("readOnly", result.get("read_only", False)))
+            self.live_connection_result_label.setText(
+                f"{status} / 只读={'是' if read_only else '否'} / {reason}".rstrip(" /")
+            )
+        else:
+            self.live_connection_result_label.setText(str(result))
+
+    def _connection_test_failed(self, message: str) -> None:
+        self.live_connection_result_label.setText("测试失败：" + message)
+
+    def _connection_test_stopped(self) -> None:
+        self.test_live_connection_button.setEnabled(True)
+        thread = self._connection_test_thread
+        self._connection_test_thread = None
+        if thread is not None:
+            thread.deleteLater()
+
+    def start_live_sync(self) -> None:
+        if self.controller.v2_pipeline is None:
+            self.live_connection_result_label.setText("G0B 未通过：真实同步保持锁定")
+            return
+        if self._live_sync_thread is not None and self._live_sync_thread.isRunning():
+            return
+        self.live_sync_now_button.setEnabled(False)
+        self.live_phase_label.setText("READING")
+        thread = LiveSyncThread(self.controller, self)
+        self._live_sync_thread = thread
+        thread.completed.connect(self._live_sync_finished)
+        thread.failed.connect(self._live_sync_failed)
+        thread.finished.connect(self._live_sync_stopped)
+        thread.start()
+
+    def _live_sync_finished(self, _result) -> None:
+        self.refresh_live_sync_status()
+
+    def _live_sync_failed(self, message: str) -> None:
+        self.live_phase_label.setText("FAILED")
+        self.live_connection_result_label.setText("同步失败：" + message)
+
+    def _live_sync_stopped(self) -> None:
+        thread = self._live_sync_thread
+        self._live_sync_thread = None
+        if thread is not None:
+            thread.deleteLater()
+        self.refresh_live_sync_status()
+
+    def cancel_live_wait(self) -> None:
+        pipeline = self.controller.v2_pipeline
+        coordinator = getattr(pipeline, "coordinator", None) if pipeline is not None else None
+        cancel = getattr(coordinator, "cancel", None)
+        if callable(cancel) and cancel():
+            self.live_connection_result_label.setText("已取消等待；发布阶段不会被强制中断")
+        else:
+            self.live_connection_result_label.setText("当前没有可取消的等待")
+        self.refresh_live_sync_status()
+
     def toggle_http(self) -> None:
         try:
             if self.controller.service_running:
@@ -528,7 +735,24 @@ class MainWindow(QMainWindow):
         self.last_backup_label.setText(self.controller.latest_backup_text())
         self.last_request_label.setText(self.controller.latest_request_text())
         self.refresh_connection_info()
+        self.refresh_live_sync_status()
         self._refresh_log()
+
+    def refresh_live_sync_status(self) -> None:
+        presentation = present_live_sync(self.controller)
+        self.live_phase_label.setText(
+            presentation.phase
+            + (f" / {presentation.reason_code}" if presentation.reason_code else "")
+        )
+        self.live_elapsed_label.setText(presentation.elapsed_text)
+        self.live_failures_label.setText(str(presentation.consecutive_failures))
+        self.live_circuit_label.setText(presentation.circuit_state)
+        self.live_last_success_label.setText(presentation.last_success)
+        self.live_snapshot_label.setText(presentation.snapshot_id)
+        self.live_counts_label.setText(presentation.counts_text)
+        sync_running = self._live_sync_thread is not None and self._live_sync_thread.isRunning()
+        self.live_sync_now_button.setEnabled(presentation.can_sync_now and not sync_running)
+        self.live_cancel_button.setEnabled(presentation.can_cancel)
 
     def refresh_connection_info(self) -> None:
         self.connection_host_edit.setText(self.controller.connection_host())
@@ -601,6 +825,11 @@ class MainWindow(QMainWindow):
         self.backup_timer.stop()
         self.refresh_timer.stop()
         self.controller.stop_service()
+        pipeline = self.controller.v2_pipeline
+        coordinator = getattr(pipeline, "coordinator", None) if pipeline is not None else None
+        stop = getattr(coordinator, "stop", None)
+        if callable(stop):
+            stop()
         self.tray.hide()
         QApplication.quit()
 

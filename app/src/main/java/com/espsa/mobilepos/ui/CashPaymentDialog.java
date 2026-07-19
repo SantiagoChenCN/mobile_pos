@@ -27,14 +27,14 @@ public final class CashPaymentDialog {
         LinearLayout panel = Views.vertical(context);
         panel.setPadding(dp(context, 18), dp(context, 8), dp(context, 18), 0);
 
-        TextView totalView = Views.text(context, UiText.choose(language, "应收：", "Total: ") + "$" + total.amount(), 20, StyleGuide.INK);
+        TextView totalView = Views.text(context, UiText.choose(language, "应收：", "Total: ") + MoneyText.currency(total), 20, StyleGuide.INK);
         totalView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         panel.addView(totalView, Views.matchWrap());
 
         EditText receivedInput = Views.editText(context);
-        receivedInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        receivedInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         receivedInput.setHint(UiText.choose(language, "客户付款金额", "Monto recibido"));
-        receivedInput.setText(Long.toString(total.amount()));
+        receivedInput.setText(MoneyText.format(total));
         panel.addView(receivedInput, Views.matchWrap());
 
         TextView changeView = Views.text(context, "", 24, StyleGuide.TEAL);
@@ -75,32 +75,20 @@ public final class CashPaymentDialog {
             TextView changeView,
             TextView errorView
     ) {
-        Long received = parseAmount(receivedInput.getText().toString());
+        Money received = NumberTextParser.parseMoneyOrNull(receivedInput.getText().toString());
         if (received == null) {
             changeView.setText("");
             errorView.setText(UiText.choose(language, "请输入付款金额", "Ingrese monto recibido"));
             return null;
         }
         try {
-            CashChangeResult result = calculator.calculate(total, Money.of(received));
-            changeView.setText(UiText.choose(language, "找零：", "Cambio: ") + "$" + result.change().amount());
+            CashChangeResult result = calculator.calculate(total, received);
+            changeView.setText(UiText.choose(language, "找零：", "Cambio: ") + MoneyText.currency(result.change()));
             errorView.setText("");
             return result;
         } catch (IllegalArgumentException ex) {
             changeView.setText(UiText.choose(language, "找零：", "Cambio: ") + "-");
             errorView.setText(UiText.choose(language, "付款金额不足", "Pago insuficiente"));
-            return null;
-        }
-    }
-
-    private static Long parseAmount(String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return null;
-        }
-        try {
-            long parsed = Long.parseLong(value.trim());
-            return parsed < 0 ? null : parsed;
-        } catch (NumberFormatException ex) {
             return null;
         }
     }

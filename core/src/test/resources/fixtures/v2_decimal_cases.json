@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "valid": [
+    {"kind": "MONEY", "raw": "0", "canonical": "0"},
+    {"kind": "MONEY", "raw": "0000.0000", "canonical": "0"},
+    {"kind": "MONEY", "raw": "2099.99", "canonical": "2099.99"},
+    {"kind": "MONEY", "raw": "2099.9900", "canonical": "2099.99"},
+    {"kind": "MONEY", "raw": "999999999999999.9999", "canonical": "999999999999999.9999"},
+    {"kind": "QUANTITY", "raw": "1.2500", "canonical": "1.25"},
+    {"kind": "QUANTITY", "raw": "99999999999.9999", "canonical": "99999999999.9999"}
+  ],
+  "invalid": [
+    {"kind": "MONEY", "raw": ""},
+    {"kind": "MONEY", "raw": " "},
+    {"kind": "MONEY", "raw": "-1"},
+    {"kind": "MONEY", "raw": "+1"},
+    {"kind": "MONEY", "raw": "1e2"},
+    {"kind": "MONEY", "raw": "NaN"},
+    {"kind": "MONEY", "raw": "Infinity"},
+    {"kind": "MONEY", "raw": "1.23456"},
+    {"kind": "MONEY", "raw": "1000000000000000"},
+    {"kind": "QUANTITY", "raw": "100000000000"}
+  ],
+  "multiplication": {
+    "leftKind": "QUANTITY",
+    "left": "1.25",
+    "rightKind": "MONEY",
+    "right": "2099.99",
+    "resultKind": "MONEY",
+    "canonical": "2624.9875"
+  }
+}

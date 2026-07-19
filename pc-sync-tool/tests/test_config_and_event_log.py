@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from config import load_config, save_config
+from config import SQL_DATABASE, SyncConfig, load_config, save_config
 from connection_info import connection_summary
 from event_log import EventLog
 from paths import AppPaths
@@ -26,8 +26,11 @@ class ConfigAndEventLogTest(unittest.TestCase):
             self.assertEqual(8765, config.port)
             self.assertEqual(15, config.backup_interval_minutes)
             self.assertEqual(8, len(config.token))
+            self.assertEqual("legacy_sqlite", config.data_source)
+            self.assertEqual(SQL_DATABASE, config.sql_database)
             saved = json.loads(paths.config_file.read_text(encoding="utf-8"))
             self.assertEqual(config.token, saved["token"])
+            self.assertNotIn("sqlDatabase", saved)
 
     def test_save_config_and_connection_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -52,6 +55,41 @@ class ConfigAndEventLogTest(unittest.TestCase):
             self.assertEqual(200, len(entries))
             self.assertEqual("event 5", entries[0]["message"])
             self.assertEqual("event 204", entries[-1]["message"])
+
+    def test_old_config_migrates_to_legacy_without_credentials(self):
+        config = SyncConfig.from_json({"token": "TOKEN123"})
+        self.assertEqual("legacy_sqlite", config.data_source)
+        self.assertEqual(15, config.live_detection_interval_seconds)
+        self.assertEqual("MS2011", config.sql_database)
+        saved = config.to_json()
+        self.assertNotIn("sqlDatabase", saved)
+        self.assertFalse(any("password" in key.lower() for key in saved))
+
+    def test_v2_config_bounds_and_enums_are_strict(self):
+        valid = SyncConfig.from_json(
+            {
+                "token": "TOKEN123",
+                "dataSource": "ms2011_live",
+                "liveDetectionIntervalSeconds": 0,
+                "v2MaxSnapshotBytes": 1024 * 1024 * 1024,
+            }
+        )
+        self.assertEqual("ms2011_live", valid.data_source)
+        for mutation in (
+            {"dataSource": "arbitrary"},
+            {"liveDetectionIntervalSeconds": 4},
+            {"liveDetectionIntervalSeconds": True},
+            {"fullFingerprintIntervalSeconds": 59},
+            {"circuitFailureThreshold": 0},
+            {"v2RetentionCount": 101},
+            {"v2MaxSnapshotBytes": 1024 * 1024 * 1024 + 1},
+            {"sqlDatabase": "master"},
+            {"sqlPassword": "secret"},
+            {"username": "sa"},
+        ):
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(ValueError):
+                    SyncConfig.from_json({"token": "TOKEN123", **mutation})
 
     def test_startup_command_distinguishes_source_and_packaged_runtime(self):
         python = Path(r"C:\Python314\python.exe")

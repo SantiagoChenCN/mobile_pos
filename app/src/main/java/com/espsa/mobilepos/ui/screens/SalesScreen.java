@@ -15,6 +15,8 @@ import com.espsa.mobilepos.core.ledger.Sale;
 import com.espsa.mobilepos.core.ledger.SaleLine;
 import com.espsa.mobilepos.core.model.SaleStatus;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.MoneyText;
+import com.espsa.mobilepos.ui.QuantityText;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
@@ -65,7 +67,7 @@ public final class SalesScreen {
         LinearLayout row = Views.vertical(context);
         row.setPadding(0, 14, 0, 14);
 
-        TextView top = Views.text(context, sale.id() + "  $" + sale.total().amount(), 18, StyleGuide.INK);
+        TextView top = Views.text(context, sale.id() + "  " + MoneyText.currency(sale.total()), 18, StyleGuide.INK);
         top.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         row.addView(top, Views.matchWrap());
 
@@ -88,13 +90,13 @@ public final class SalesScreen {
     private void showDetail(Sale sale) {
         StringBuilder detail = new StringBuilder();
         detail.append(sale.id()).append("\n");
-        detail.append(sale.paymentMethod().name()).append("  $").append(sale.total().amount()).append("\n\n");
+        detail.append(sale.paymentMethod().name()).append("  ").append(MoneyText.currency(sale.total())).append("\n\n");
         for (SaleLine line : sale.lines()) {
             detail.append(line.name())
                     .append(" x")
-                    .append(line.quantity())
-                    .append("  $")
-                    .append(line.finalSubtotal().amount())
+                    .append(QuantityText.format(line.quantity()))
+                    .append("  ")
+                    .append(MoneyText.currency(line.finalSubtotal()))
                     .append("\n");
         }
         new AlertDialog.Builder(context)

@@ -21,6 +21,7 @@ import com.espsa.mobilepos.core.editing.ProductUpdateResult;
 import com.espsa.mobilepos.core.editing.ProductValidationResult;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.ui.AppLanguage;
+import com.espsa.mobilepos.ui.MoneyText;
 import com.espsa.mobilepos.ui.StyleGuide;
 import com.espsa.mobilepos.ui.UiText;
 import com.espsa.mobilepos.ui.Views;
@@ -105,8 +106,8 @@ public final class ProductFormScreen {
         page.addView(nameInput, Views.matchWrap());
 
         page.addView(fieldLabel(UiText.choose(language, "售价", "Precio")));
-        salePriceInput = input(InputType.TYPE_CLASS_NUMBER);
-        salePriceInput.setText(originalProduct == null ? "" : Long.toString(originalProduct.salePrice().amount()));
+        salePriceInput = input(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        salePriceInput.setText(originalProduct == null ? "" : MoneyText.format(originalProduct.salePrice()));
         page.addView(salePriceInput, Views.matchWrap());
 
         page.addView(fieldLabel(UiText.choose(language, "分类", "Categoria")));
@@ -118,10 +119,10 @@ public final class ProductFormScreen {
         page.addView(unitSpinner, Views.matchWrap());
 
         page.addView(fieldLabel(UiText.choose(language, "促销价", "Precio promocional")));
-        promotionPriceInput = input(InputType.TYPE_CLASS_NUMBER);
+        promotionPriceInput = input(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         promotionPriceInput.setText(originalProduct == null || originalProduct.promotionPrice() == null
                 ? ""
-                : Long.toString(originalProduct.promotionPrice().amount()));
+                : MoneyText.format(originalProduct.promotionPrice()));
         page.addView(promotionPriceInput, Views.matchWrap());
 
         page.addView(fieldLabel(UiText.choose(language, "促销数量", "Cantidad promocional")));
@@ -317,7 +318,7 @@ public final class ProductFormScreen {
     private void confirmDeleteFirst() {
         String message = originalProduct.name()
                 + "\n" + originalProduct.barcode()
-                + "\n$" + originalProduct.salePrice().amount()
+                + "\n" + MoneyText.currency(originalProduct.salePrice())
                 + "\n\n"
                 + UiText.choose(language, "删除后不能通过搜索或条码加入收银。", "Luego no se podra agregar por busqueda o codigo.");
         new AlertDialog.Builder(context)

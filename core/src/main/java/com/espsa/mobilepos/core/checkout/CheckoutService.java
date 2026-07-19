@@ -7,6 +7,7 @@ import com.espsa.mobilepos.core.ledger.SaleRepository;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.PaymentMethod;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.Quantity;
 import com.espsa.mobilepos.core.model.SaleStatus;
 import com.espsa.mobilepos.core.pricing.CartPriceResult;
 import com.espsa.mobilepos.core.pricing.LinePriceResult;
@@ -46,18 +47,24 @@ public final class CheckoutService {
     }
 
     public Cart startCart() {
-        return new Cart();
+        return startCart(PricingSnapshotRef.localLibrary(productRepository));
     }
 
-    public CartLine addProductByBarcode(Cart cart, String barcode, int quantity) throws ProductNotFoundException {
-        Optional<Product> product = productRepository.findByBarcode(barcode);
+    /** CB-02 supplies the active snapshot identity and immutable lookup at the approved order boundary. */
+    public Cart startCart(PricingSnapshotRef pricingSnapshotRef) {
+        return new Cart(null, Objects.requireNonNull(pricingSnapshotRef, "pricingSnapshotRef"));
+    }
+
+    public CartLine addProductByBarcode(Cart cart, String barcode, Quantity quantity) throws ProductNotFoundException {
+        Objects.requireNonNull(cart, "cart");
+        Optional<Product> product = cart.pricingSnapshotRef().findByBarcode(barcode);
         if (!product.isPresent()) {
             throw new ProductNotFoundException(barcode);
         }
         return cart.addProduct(product.get(), quantity);
     }
 
-    public CartLine addManualAlmacenItem(Cart cart, Money unitPrice, int quantity) {
+    public CartLine addManualAlmacenItem(Cart cart, Money unitPrice, Quantity quantity) {
         Product manual = Product.manualAlmacen("manual-" + Instant.now().toEpochMilli(), unitPrice);
         return cart.addProduct(manual, quantity);
     }
@@ -74,7 +81,7 @@ public final class CheckoutService {
             throw new IllegalArgumentException("Payment method is required");
         }
         CartPriceResult price = priceCalculator.calculateCart(cart);
-        if (price.total().amount() <= 0) {
+        if (price.total().compareTo(Money.ZERO) <= 0) {
             throw new IllegalArgumentException("Sale total must be greater than zero");
         }
 
@@ -86,7 +93,7 @@ public final class CheckoutService {
                     product.barcode(),
                     product.name(),
                     product.category(),
-                    linePrice.line().quantity(),
+                    linePrice.line().quantityValue(),
                     linePrice.originalUnitPrice(),
                     linePrice.appliedUnitPrice(),
                     linePrice.grossSubtotal(),

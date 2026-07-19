@@ -5,6 +5,7 @@ import android.net.Uri;
 
 import com.espsa.mobilepos.core.catalog.InMemoryProductRepository;
 import com.espsa.mobilepos.core.catalog.ProductCatalogService;
+import com.espsa.mobilepos.core.catalog.ProductCatalogCandidate;
 import com.espsa.mobilepos.core.checkout.Cart;
 import com.espsa.mobilepos.core.checkout.CheckoutService;
 import com.espsa.mobilepos.core.editing.ProductEditingService;
@@ -21,10 +22,14 @@ import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
 import com.espsa.mobilepos.core.pricing.DefaultPriceCalculator;
 import com.espsa.mobilepos.app.sync.ComputerSyncClient;
+import com.espsa.mobilepos.app.sync.ComputerSyncCoordinator;
 import com.espsa.mobilepos.app.sync.ComputerSyncException;
 import com.espsa.mobilepos.app.sync.ComputerSyncManifest;
 import com.espsa.mobilepos.app.sync.ComputerSyncService;
 import com.espsa.mobilepos.app.sync.ComputerSyncStore;
+import com.espsa.mobilepos.app.sync.ActiveSnapshotManager;
+import com.espsa.mobilepos.app.sync.V2ProductSnapshotReader;
+import com.espsa.mobilepos.app.sync.V2SnapshotStore;
 import com.espsa.mobilepos.app.time.ArgentinaTime;
 
 import java.io.File;
@@ -47,6 +52,9 @@ public final class AppServices {
     private final SearchTaskRunner searchTaskRunner;
     private final ImportFormatRegistry importFormatRegistry;
     private final ComputerSyncService computerSyncService;
+    private final ComputerSyncCoordinator computerSyncCoordinator;
+    private final ActiveSnapshotManager activeSnapshotManager;
+    private final ComputerSyncCoordinator.ListenerRegistration syncBoundaryRegistration;
     private String lastImportMessage = "";
     private Cart currentCart;
 
@@ -63,7 +71,9 @@ public final class AppServices {
             AndroidFileNameResolver fileNameResolver,
             SearchTaskRunner searchTaskRunner,
             ImportFormatRegistry importFormatRegistry,
-            ComputerSyncService computerSyncService
+            ComputerSyncService computerSyncService,
+            ComputerSyncCoordinator computerSyncCoordinator,
+            ActiveSnapshotManager activeSnapshotManager
     ) {
         this.catalog = catalog;
         this.checkout = checkout;
@@ -78,7 +88,14 @@ public final class AppServices {
         this.searchTaskRunner = searchTaskRunner;
         this.importFormatRegistry = importFormatRegistry;
         this.computerSyncService = computerSyncService;
-        this.currentCart = checkout.startCart();
+        this.computerSyncCoordinator = computerSyncCoordinator;
+        this.activeSnapshotManager = activeSnapshotManager;
+        this.currentCart = activeSnapshotManager == null
+                ? checkout.startCart()
+                : activeSnapshotManager.startCartForRecoveredActiveOrLocal();
+        this.syncBoundaryRegistration = computerSyncCoordinator == null || activeSnapshotManager == null
+                ? null
+                : computerSyncCoordinator.addListener(this::onComputerSyncState);
     }
 
     public static AppServices create(Context context) {
@@ -98,7 +115,11 @@ public final class AppServices {
         LedgerService ledger = new LedgerService(saleRepository, ArgentinaTime.ZONE);
         ProductLibraryService productLibrary = new ProductLibraryService(context, productLocalStore, productRepository);
         ProductOptionProvider optionProvider = new ProductOptionProvider(productLibrary::latestImportSnapshotProducts);
-        ProductEditingService productEditing = new ProductEditingService(productRepository, productLibrary, optionProvider);
+        ProductEditingService productEditing = new ProductEditingService(productRepository,
+                products -> productLibrary.saveManualProducts(ProductCatalogCandidate.localPersistenceProducts(products)), optionProvider);
+        ComputerSyncStore computerSyncStore = new ComputerSyncStore();
+        ComputerSyncService computerSyncService = new ComputerSyncService(computerSyncStore, new ComputerSyncClient());
+        ActiveSnapshotManager activeSnapshotManager = createActiveSnapshotManager(context, catalog, productRepository, checkout);
         return new AppServices(
                 catalog,
                 checkout,
@@ -112,7 +133,9 @@ public final class AppServices {
                 new AndroidFileNameResolver(),
                 new SearchTaskRunner(),
                 ImportFormatRegistry.coreDefaults(),
-                new ComputerSyncService(new ComputerSyncStore(), new ComputerSyncClient())
+                computerSyncService,
+                new ComputerSyncCoordinator(context, computerSyncStore, computerSyncService),
+                activeSnapshotManager
         );
     }
 
@@ -132,7 +155,8 @@ public final class AppServices {
         ProductLocalStore productLocalStore = new ProductLocalStore();
         ProductLibraryService productLibrary = new ProductLibraryService(null, productLocalStore, productRepository);
         ProductOptionProvider optionProvider = new ProductOptionProvider(productLibrary::latestImportSnapshotProducts);
-        ProductEditingService productEditing = new ProductEditingService(productRepository, productLibrary, optionProvider);
+        ProductEditingService productEditing = new ProductEditingService(productRepository,
+                products -> productLibrary.saveManualProducts(ProductCatalogCandidate.localPersistenceProducts(products)), optionProvider);
         return new AppServices(
                 catalog,
                 checkout,
@@ -146,7 +170,9 @@ public final class AppServices {
                 new AndroidFileNameResolver(),
                 new SearchTaskRunner(),
                 ImportFormatRegistry.coreDefaults(),
-                new ComputerSyncService(new ComputerSyncStore(), new ComputerSyncClient())
+                new ComputerSyncService(new ComputerSyncStore(), new ComputerSyncClient()),
+                null,
+                null
         );
     }
 
@@ -158,11 +184,25 @@ public final class AppServices {
         }
     }
 
+    private static ActiveSnapshotManager createActiveSnapshotManager(
+            Context context,
+            ProductCatalogService catalog,
+            InMemoryProductRepository productRepository,
+            CheckoutService checkout
+    ) {
+        try {
+            V2SnapshotStore store = new V2SnapshotStore(context);
+            return new ActiveSnapshotManager(store, new V2ProductSnapshotReader(store), catalog, productRepository, checkout);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static List<Product> demoProducts() {
         return new ArrayList<Product>(Arrays.asList(
-                new Product("demo-1", "7790580000001", "Yerba Oferta", "almacen", "un", Money.of(2000), Money.of(1499), 2, false),
-                new Product("demo-2", "7790895000012", "Aceite girasol", "almacen", "un", Money.of(2800), null, 0, false),
-                new Product("demo-3", "7791234000019", "Leche entera", "lacteos", "un", Money.of(1250), Money.of(1100), 6, false)
+                new Product("demo-1", "7790580000001", "Yerba Oferta", "almacen", "un", Money.of("2000"), Money.of("1499"), 2, false),
+                new Product("demo-2", "7790895000012", "Aceite girasol", "almacen", "un", Money.of("2800"), null, 0, false),
+                new Product("demo-3", "7791234000019", "Leche entera", "lacteos", "un", Money.of("1250"), Money.of("1100"), 6, false)
         ));
     }
 
@@ -206,13 +246,35 @@ public final class AppServices {
         return computerSyncService;
     }
 
-    public Cart currentCart() {
+    /** Lifecycle owners obtain this coordinator but AppServices itself never starts or stops it. */
+    public ComputerSyncCoordinator computerSyncCoordinator() {
+        return computerSyncCoordinator;
+    }
+
+    public synchronized Cart currentCart() {
         return currentCart;
     }
 
-    public Cart resetCart() {
-        currentCart = checkout.startCart();
+    public synchronized Cart resetCart() {
+        return onOrderFinishedOrCancelled();
+    }
+
+    /** Shared backend order boundary for both successful completion and cancellation. */
+    public synchronized Cart onOrderFinishedOrCancelled() {
+        currentCart = activeSnapshotManager == null
+                ? checkout.startCart()
+                : activeSnapshotManager.onOrderFinishedOrCancelled(currentCart);
         return currentCart;
+    }
+
+    /** Coordinator callbacks run off the UI getter and enable only an already pending verified pair. */
+    private void onComputerSyncState(com.espsa.mobilepos.app.sync.ComputerSyncState state) {
+        if (state == null || state.snapshotId().isEmpty() || activeSnapshotManager == null) {
+            return;
+        }
+        synchronized (this) {
+            currentCart = activeSnapshotManager.activatePendingForEmptyCart(currentCart);
+        }
     }
 
     public ProductImportResult importMingshengDatabase(Context context, Uri uri) throws ProductImportException {

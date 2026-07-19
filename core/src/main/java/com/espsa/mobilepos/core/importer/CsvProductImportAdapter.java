@@ -6,7 +6,6 @@ import com.espsa.mobilepos.core.model.Product;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PushbackReader;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.Instant;
@@ -108,13 +107,12 @@ public final class CsvProductImportAdapter implements ProductImportAdapter {
 
     private Money parseMoney(String value, int rowNumber, List<String> warnings) {
         try {
-            BigDecimal amount = new BigDecimal(value.trim().replace(",", "."));
-            BigDecimal normalized = amount.stripTrailingZeros();
-            if (amount.signum() <= 0 || normalized.scale() > 0) {
-                warnings.add("Row " + rowNumber + ": price must be a positive integer");
+            Money amount = Money.of(value.trim().replace(",", "."));
+            if (amount.isZero()) {
+                warnings.add("Row " + rowNumber + ": price must be greater than zero");
                 return null;
             }
-            return Money.of(amount.longValueExact());
+            return amount;
         } catch (Exception ex) {
             warnings.add("Row " + rowNumber + ": invalid price: " + value);
             return null;

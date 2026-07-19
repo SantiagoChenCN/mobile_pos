@@ -71,7 +71,7 @@ public final class ProductSearchResultAdapter extends BaseAdapter {
 
     private String secondaryLine(Product product) {
         return product.barcode()
-                + "  $" + product.salePrice().amount()
+                + "  " + MoneyText.currency(product.salePrice())
                 + "  " + product.category()
                 + unitSuffix(product);
     }

@@ -56,6 +56,18 @@ public final class MainActivity extends Activity implements ImportGateway, ScanG
         renderShell();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        services.computerSyncCoordinator().startForeground();
+    }
+
+    @Override
+    protected void onPause() {
+        services.computerSyncCoordinator().stopForeground();
+        super.onPause();
+    }
+
     private void renderShell() {
         cancelPendingUiTasks();
         LinearLayout root = Views.vertical(this);

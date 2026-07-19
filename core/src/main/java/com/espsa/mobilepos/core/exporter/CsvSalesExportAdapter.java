@@ -27,11 +27,11 @@ public final class CsvSalesExportAdapter implements SalesExportPort {
                         sale.createdAt().toString(),
                         sale.status().name(),
                         sale.paymentMethod().name(),
-                        Long.toString(sale.subtotal().amount()),
+                        sale.subtotal().canonicalText(),
                         sale.cartDiscount().type().name(),
-                        Long.toString(sale.cartDiscount().value()),
-                        Long.toString(sale.cartDiscountAmount().amount()),
-                        Long.toString(sale.total().amount())
+                        sale.cartDiscount().canonicalValue(),
+                        sale.cartDiscountAmount().canonicalText(),
+                        sale.total().canonicalText()
                 ));
             }
         }
@@ -47,14 +47,14 @@ public final class CsvSalesExportAdapter implements SalesExportPort {
                             line.barcode(),
                             line.name(),
                             line.category(),
-                            Integer.toString(line.quantity()),
-                            Long.toString(line.originalUnitPrice().amount()),
-                            Long.toString(line.appliedUnitPrice().amount()),
-                            Long.toString(line.grossSubtotal().amount()),
+                            line.quantity().canonicalText(),
+                            line.originalUnitPrice().canonicalText(),
+                            line.appliedUnitPrice().canonicalText(),
+                            line.grossSubtotal().canonicalText(),
                             line.lineDiscount().type().name(),
-                            Long.toString(line.lineDiscount().value()),
-                            Long.toString(line.lineDiscountAmount().amount()),
-                            Long.toString(line.finalSubtotal().amount()),
+                            line.lineDiscount().canonicalValue(),
+                            line.lineDiscountAmount().canonicalText(),
+                            line.finalSubtotal().canonicalText(),
                             Boolean.toString(line.automaticPromotionApplied()),
                             Boolean.toString(line.manualPriceApplied()),
                             Boolean.toString(line.manualPriceProduct())

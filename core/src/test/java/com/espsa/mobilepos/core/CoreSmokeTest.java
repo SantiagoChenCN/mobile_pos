@@ -26,6 +26,7 @@ import com.espsa.mobilepos.core.model.Discount;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.PaymentMethod;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.Quantity;
 import com.espsa.mobilepos.core.pricing.CartPriceResult;
 import com.espsa.mobilepos.core.pricing.DefaultPriceCalculator;
 
@@ -51,9 +52,9 @@ public final class CoreSmokeTest {
         mingshengRow.put("GHuiPrice", "1499");
         mingshengRow.put("GHuiPriceCount", "2");
         Product promoProduct = new MingshengProductMapper().fromGoodListRow(mingshengRow);
-        Product huevoBlanco = new Product("2", "7790000000002", "Huevo Blanco", "almacen", "un", Money.of(1200), null, 0, false);
-        Product mapleHuevo = new Product("3", "7790000000003", "Huevo Blanco Maple", "almacen", "un", Money.of(3600), null, 0, false);
-        Product chocolateHuevo = new Product("4", "7790000000004", "Chocolate con Huevo", "golosinas", "un", Money.of(900), null, 0, false);
+        Product huevoBlanco = new Product("2", "7790000000002", "Huevo Blanco", "almacen", "un", Money.of("1200"), null, 0, false);
+        Product mapleHuevo = new Product("3", "7790000000003", "Huevo Blanco Maple", "almacen", "un", Money.of("3600"), null, 0, false);
+        Product chocolateHuevo = new Product("4", "7790000000004", "Chocolate con Huevo", "golosinas", "un", Money.of("900"), null, 0, false);
 
         InMemoryProductRepository productRepository = new InMemoryProductRepository();
         productRepository.replaceAll(Arrays.asList(promoProduct, huevoBlanco, mapleHuevo, chocolateHuevo));
@@ -75,21 +76,21 @@ public final class CoreSmokeTest {
         CheckoutService checkout = new CheckoutService(productRepository, new DefaultPriceCalculator(), saleRepository);
 
         Cart cart = checkout.startCart();
-        CartLine line = checkout.addProductByBarcode(cart, "7790580000001", 3);
+        CartLine line = checkout.addProductByBarcode(cart, "7790580000001", Quantity.of("3"));
         CartPriceResult automaticPromo = checkout.preview(cart);
         assertAmount("quantity promotion applies to all units", 4497, automaticPromo.subtotal());
         assertTrue("automatic promotion marker", automaticPromo.lines().get(0).automaticPromotionApplied());
 
-        CartLine overridden = line.withManualUnitPrice(Money.of(1600)).withLineDiscount(Discount.percent(1000));
+        CartLine overridden = line.withManualUnitPrice(Money.of("1600")).withLineDiscount(Discount.percent("10"));
         cart.replaceLine(overridden);
-        cart.setCartDiscount(Discount.fixedAmount(Money.of(320)));
+        cart.setCartDiscount(Discount.fixedAmount(Money.of("320")));
 
         CartPriceResult manualPricing = checkout.preview(cart);
         assertAmount("manual price becomes line base price before line discount", 4320, manualPricing.subtotal());
         assertAmount("cart fixed discount applies after line discount", 4000, manualPricing.total());
         assertTrue("manual price suppresses automatic promotion", !manualPricing.lines().get(0).automaticPromotionApplied());
 
-        checkout.addManualAlmacenItem(cart, Money.of(500), 1);
+        checkout.addManualAlmacenItem(cart, Money.of("500"), Quantity.one());
         CartPriceResult withManualAlmacen = checkout.preview(cart);
         assertAmount("manual almacen item participates in cart total", 4500, withManualAlmacen.total());
 
@@ -166,11 +167,11 @@ public final class CoreSmokeTest {
     }
 
     private static void runSearchIndexUpdateChecks(InMemoryProductRepository productRepository) {
-        Product indexed = new Product("index-1", "00991", "Cafe Molido", "almacen", "un", Money.of(2500), null, 0, false);
+        Product indexed = new Product("index-1", "00991", "Cafe Molido", "almacen", "un", Money.of("2500"), null, 0, false);
         productRepository.upsert(indexed);
         assertTrue("upserted product is searchable", containsProductName(productRepository.searchByName("cafe molido", Integer.MAX_VALUE), "Cafe Molido"));
 
-        Product renamed = new Product("index-1", "00991", "Te Negro", "almacen", "un", Money.of(2600), null, 0, false);
+        Product renamed = new Product("index-1", "00991", "Te Negro", "almacen", "un", Money.of("2600"), null, 0, false);
         productRepository.upsert(renamed);
         assertTrue("old name no longer matches after upsert", !containsProductName(productRepository.searchByName("cafe molido", Integer.MAX_VALUE), "Cafe Molido"));
         assertTrue("new name matches after upsert", containsProductName(productRepository.searchByName("te negro", Integer.MAX_VALUE), "Te Negro"));
@@ -181,28 +182,28 @@ public final class CoreSmokeTest {
 
     private static void runCashChangeChecks() {
         CashChangeCalculator calculator = new CashChangeCalculator();
-        CashChangeResult exact = calculator.calculate(Money.of(1000), Money.of(1000));
+        CashChangeResult exact = calculator.calculate(Money.of("1000"), Money.of("1000"));
         assertAmount("cash change exact payment", 0, exact.change());
 
-        CashChangeResult overpaid = calculator.calculate(Money.of(1000), Money.of(1500));
+        CashChangeResult overpaid = calculator.calculate(Money.of("1000"), Money.of("1500"));
         assertAmount("cash change overpayment", 500, overpaid.change());
 
         expectIllegalArgument("cash change rejects insufficient payment", new Runnable() {
             @Override
             public void run() {
-                calculator.calculate(Money.of(1000), Money.of(999));
+                calculator.calculate(Money.of("1000"), Money.of("999"));
             }
         });
         expectIllegalArgument("cash change rejects null total", new Runnable() {
             @Override
             public void run() {
-                calculator.calculate(null, Money.of(1000));
+                calculator.calculate(null, Money.of("1000"));
             }
         });
         expectIllegalArgument("cash change rejects null received", new Runnable() {
             @Override
             public void run() {
-                calculator.calculate(Money.of(1000), null);
+                calculator.calculate(Money.of("1000"), null);
             }
         });
     }
@@ -234,8 +235,8 @@ public final class CoreSmokeTest {
     }
 
     private static void assertAmount(String label, long expected, Money actual) {
-        if (actual.amount() != expected) {
-            throw new AssertionError(label + ": expected " + expected + " but got " + actual.amount());
+        if (!Money.of(Long.toString(expected)).equals(actual)) {
+            throw new AssertionError(label + ": expected " + expected + " but got " + actual.canonicalText());
         }
     }
 

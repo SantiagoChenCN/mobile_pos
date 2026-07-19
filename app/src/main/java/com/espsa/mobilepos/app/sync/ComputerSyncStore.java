@@ -12,6 +12,11 @@ public final class ComputerSyncStore {
     private static final String LAST_SYNCED_SHA256 = "lastSyncedSha256";
     private static final String LAST_CHECKED_AT = "lastCheckedAt";
     private static final String LAST_SYNCED_AT = "lastSyncedAt";
+    private static final String FOREGROUND_INTERVAL_SECONDS = "foregroundIntervalSeconds";
+    private static final String COORDINATOR_CONSECUTIVE_FAILURES = "coordinatorConsecutiveFailures";
+    private static final String COORDINATOR_LAST_CHECK_AT_UTC = "coordinatorLastCheckAtUtc";
+    private static final String COORDINATOR_LAST_SUCCESS_AT_UTC = "coordinatorLastSuccessAtUtc";
+    private static final String COORDINATOR_SNAPSHOT_ID = "coordinatorSnapshotId";
 
     public ComputerSyncConfig load(Context context) {
         SharedPreferences preferences = preferences(context);
@@ -22,7 +27,13 @@ public final class ComputerSyncStore {
                 preferences.getString(LAST_SEEN_SHA256, ""),
                 preferences.getString(LAST_SYNCED_SHA256, ""),
                 preferences.getString(LAST_CHECKED_AT, ""),
-                preferences.getString(LAST_SYNCED_AT, "")
+                preferences.getString(LAST_SYNCED_AT, ""),
+                ComputerSyncConfig.storedForegroundIntervalSeconds(preferences.getInt(
+                        FOREGROUND_INTERVAL_SECONDS, ComputerSyncConfig.DEFAULT_FOREGROUND_INTERVAL_SECONDS)),
+                Math.max(0, preferences.getInt(COORDINATOR_CONSECUTIVE_FAILURES, 0)),
+                preferences.getString(COORDINATOR_LAST_CHECK_AT_UTC, ""),
+                preferences.getString(COORDINATOR_LAST_SUCCESS_AT_UTC, ""),
+                preferences.getString(COORDINATOR_SNAPSHOT_ID, "")
         );
     }
 
@@ -37,6 +48,11 @@ public final class ComputerSyncStore {
                 .putString(LAST_SYNCED_SHA256, safeConfig.lastSyncedSha256())
                 .putString(LAST_CHECKED_AT, safeConfig.lastCheckedAt())
                 .putString(LAST_SYNCED_AT, safeConfig.lastSyncedAt())
+                .putInt(FOREGROUND_INTERVAL_SECONDS, safeConfig.foregroundIntervalSeconds())
+                .putInt(COORDINATOR_CONSECUTIVE_FAILURES, safeConfig.coordinatorConsecutiveFailures())
+                .putString(COORDINATOR_LAST_CHECK_AT_UTC, safeConfig.coordinatorLastCheckAtUtc())
+                .putString(COORDINATOR_LAST_SUCCESS_AT_UTC, safeConfig.coordinatorLastSuccessAtUtc())
+                .putString(COORDINATOR_SNAPSHOT_ID, safeConfig.coordinatorSnapshotId())
                 .apply();
     }
 

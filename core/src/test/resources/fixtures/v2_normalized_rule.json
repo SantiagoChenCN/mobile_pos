@@ -1,0 +1,13 @@
+{
+  "ruleId": "rule-simple-v1",
+  "candidateId": "pc-1f03e4ee190b6df903dc7ddf",
+  "ruleType": "FIXTURE_ONLY",
+  "ruleVersion": "fixture-only-v1",
+  "evidenceHash": "abcdef1234560000000000000000000000000000000000000000000000000000",
+  "parameters": {},
+  "tiers": [],
+  "schedules": [],
+  "groups": [],
+  "priorityOrder": null,
+  "stackMode": "UNVERIFIED"
+}

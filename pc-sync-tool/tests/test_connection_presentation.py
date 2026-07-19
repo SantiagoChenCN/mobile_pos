@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from network_diagnostics import NetworkDiagnosticResult
 from network import validate_phone_host
-from ui.connection_presentation import present_connection
+from ui.connection_presentation import present_connection, present_live_sync
 
 
 class ConnectionPresentationTest(unittest.TestCase):
@@ -34,6 +34,56 @@ class ConnectionPresentationTest(unittest.TestCase):
         self.assertFalse(presentation.can_copy_connection)
         self.assertEqual("HTTP 服务：未运行", presentation.service_text)
         self.assertIn("先启动 HTTP 服务", presentation.guidance_text)
+
+    def test_live_sync_is_visibly_locked_without_pipeline(self):
+        controller = type("Controller", (), {"v2_pipeline": None, "latest_v2_result": None})()
+
+        presentation = present_live_sync(controller)
+
+        self.assertEqual("LOCKED", presentation.phase)
+        self.assertEqual("G0B_LOCKED", presentation.reason_code)
+        self.assertFalse(presentation.can_sync_now)
+        self.assertFalse(presentation.can_cancel)
+
+    def test_live_sync_presents_coordinator_and_snapshot_counts(self):
+        state = type(
+            "State",
+            (),
+            {
+                "phase": "SUCCEEDED",
+                "reason_code": "SYNC_SUCCEEDED",
+                "elapsed_ms": 1250,
+                "consecutive_failures": 0,
+                "circuit_state": "CLOSED",
+            },
+        )()
+        coordinator = type("Coordinator", (), {"state": state, "cancel": lambda self: True})()
+        pipeline = type("Pipeline", (), {"coordinator": coordinator})()
+        publish = type(
+            "Publish", (), {"snapshot_id": "snap-1", "manifest": {"createdAt": "2026-07-17T12:00:00Z"}}
+        )()
+        result = type(
+            "Result",
+            (),
+            {
+                "publish": publish,
+                "product_count": 12,
+                "promotion_candidate_count": 3,
+                "validation_issue_count": 1,
+            },
+        )()
+        controller = type(
+            "Controller", (), {"v2_pipeline": pipeline, "latest_v2_result": result}
+        )()
+
+        presentation = present_live_sync(controller)
+
+        self.assertEqual("SUCCEEDED", presentation.phase)
+        self.assertEqual("1.25 秒", presentation.elapsed_text)
+        self.assertEqual("snap-1", presentation.snapshot_id)
+        self.assertEqual("商品 12 / 候选 3 / 问题 1", presentation.counts_text)
+        self.assertTrue(presentation.can_sync_now)
+        self.assertTrue(presentation.can_cancel)
 
 
 def _diagnostic(

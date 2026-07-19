@@ -3,6 +3,7 @@ package com.espsa.mobilepos.core.editing;
 import com.espsa.mobilepos.core.catalog.ProductRepository;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.ProductOrigin;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +53,12 @@ public final class ProductEditingService {
                     "El producto no existe"
             ), new ArrayList<ProductChange>(), false);
         }
+        if (original.get().origin() == ProductOrigin.MS2011_SYNC) {
+            return new ProductUpdateResult(original.get(), null, validationError(
+                    "电脑同步商品不可在手机上编辑",
+                    "Los productos sincronizados desde la computadora no se pueden editar en el telefono"
+            ), new ArrayList<ProductChange>(), false);
+        }
         ProductValidationResult validation = validateForUpdate(productId, draft);
         if (!validation.valid()) {
             return new ProductUpdateResult(original.get(), null, validation, new ArrayList<ProductChange>(), false);
@@ -64,6 +71,10 @@ public final class ProductEditingService {
     }
 
     public ProductDeleteResult deleteProduct(String productId) throws ProductPersistenceException {
+        Optional<Product> original = productRepository.findById(productId);
+        if (original.isPresent() && original.get().origin() == ProductOrigin.MS2011_SYNC) {
+            return new ProductDeleteResult(null);
+        }
         Optional<Product> deleted = productRepository.deleteById(productId);
         if (!deleted.isPresent()) {
             return new ProductDeleteResult(null);
@@ -130,22 +141,21 @@ public final class ProductEditingService {
         }
         validateBarcode(draft.barcode(), zh, es);
         validateName(draft.name(), zh, es);
-        Long salePrice = parsePositiveLong(draft.salePriceText(), "售价", "Precio", zh, es);
-        Long promotionPrice = parseOptionalPositiveLong(draft.promotionPriceText(), "促销价", "Precio promocional", zh, es);
-        Long promotionQuantity = parseOptionalPositiveLong(draft.promotionMinQuantityText(), "促销数量", "Cantidad promocional", zh, es);
+        Money salePrice = parsePositiveMoney(draft.salePriceText(), "售价", "Precio", zh, es);
+        Money promotionPrice = parseOptionalPositiveMoney(draft.promotionPriceText(), "促销价", "Precio promocional", zh, es);
+        Long promotionQuantity = parseOptionalPositiveInteger(draft.promotionMinQuantityText(), "促销数量", "Cantidad promocional", zh, es);
         validatePromotionPair(draft, salePrice, promotionPrice, promotionQuantity, zh, es);
         if (!zh.isEmpty()) {
             return new ProductValidationResult(zh, es, null);
         }
-        Money parsedPromotionPrice = promotionPrice == null ? null : Money.of(promotionPrice);
         int parsedPromotionQuantity = promotionQuantity == null ? 0 : promotionQuantity.intValue();
         ParsedProductDraft parsed = new ParsedProductDraft(
                 draft.barcode(),
                 draft.name(),
                 draft.category(),
                 draft.unitName(),
-                Money.of(salePrice),
-                parsedPromotionPrice,
+                salePrice,
+                promotionPrice,
                 parsedPromotionQuantity
         );
         return ProductValidationResult.valid(parsed);
@@ -170,7 +180,7 @@ public final class ProductEditingService {
         }
     }
 
-    private Long parsePositiveLong(
+    private Money parsePositiveMoney(
             String value,
             String fieldZh,
             String fieldEs,
@@ -182,15 +192,10 @@ public final class ProductEditingService {
             es.add(fieldEs + " es obligatorio");
             return null;
         }
-        Long parsed = parseLong(value, fieldZh, fieldEs, zh, es);
-        if (parsed != null && parsed <= 0) {
-            zh.add(fieldZh + "必须大于 0");
-            es.add(fieldEs + " debe ser mayor que 0");
-        }
-        return parsed;
+        return parseMoney(value, fieldZh, fieldEs, zh, es);
     }
 
-    private Long parseOptionalPositiveLong(
+    private Money parseOptionalPositiveMoney(
             String value,
             String fieldZh,
             String fieldEs,
@@ -200,22 +205,47 @@ public final class ProductEditingService {
         if (value == null || value.isEmpty()) {
             return null;
         }
-        Long parsed = parseLong(value, fieldZh, fieldEs, zh, es);
-        if (parsed != null && parsed <= 0) {
-            zh.add(fieldZh + "必须大于 0");
-            es.add(fieldEs + " debe ser mayor que 0");
-        }
-        return parsed;
+        return parseMoney(value, fieldZh, fieldEs, zh, es);
     }
 
-    private Long parseLong(String value, String fieldZh, String fieldEs, List<String> zh, List<String> es) {
+    private Money parseMoney(String value, String fieldZh, String fieldEs, List<String> zh, List<String> es) {
+        try {
+            Money parsed = Money.of(value.replace(',', '.'));
+            if (!parsed.isZero()) {
+                return parsed;
+            }
+            zh.add(fieldZh + "必须大于 0");
+            es.add(fieldEs + " debe ser mayor que 0");
+        } catch (IllegalArgumentException ex) {
+            zh.add(fieldZh + "必须是有效十进制金额");
+            es.add(fieldEs + " debe ser un monto decimal valido");
+        }
+        return null;
+    }
+
+    private Long parseOptionalPositiveInteger(
+            String value,
+            String fieldZh,
+            String fieldEs,
+            List<String> zh,
+            List<String> es
+    ) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
         if (!value.matches("\\d+")) {
             zh.add(fieldZh + "必须是整数");
             es.add(fieldEs + " debe ser entero");
             return null;
         }
         try {
-            return Long.parseLong(value);
+            long parsed = Long.parseLong(value);
+            if (parsed <= 0) {
+                zh.add(fieldZh + "必须大于 0");
+                es.add(fieldEs + " debe ser mayor que 0");
+                return null;
+            }
+            return parsed;
         } catch (NumberFormatException ex) {
             zh.add(fieldZh + "数字过大");
             es.add(fieldEs + " es demasiado grande");
@@ -225,8 +255,8 @@ public final class ProductEditingService {
 
     private void validatePromotionPair(
             ProductDraft draft,
-            Long salePrice,
-            Long promotionPrice,
+            Money salePrice,
+            Money promotionPrice,
             Long promotionQuantity,
             List<String> zh,
             List<String> es
@@ -237,7 +267,7 @@ public final class ProductEditingService {
             zh.add("促销价和促销数量必须同时填写或同时留空");
             es.add("Precio y cantidad promocional deben completarse juntos o quedar vacios");
         }
-        if (salePrice != null && promotionPrice != null && promotionPrice >= salePrice) {
+        if (salePrice != null && promotionPrice != null && promotionPrice.compareTo(salePrice) >= 0) {
             zh.add("促销价必须小于售价");
             es.add("El precio promocional debe ser menor que el precio normal");
         }
@@ -253,6 +283,10 @@ public final class ProductEditingService {
                 draft.salePrice(),
                 draft.promotionPrice(),
                 draft.promotionMinQuantity(),
+                false,
+                ProductOrigin.LOCAL,
+                "",
+                "",
                 false
         );
     }
@@ -267,7 +301,11 @@ public final class ProductEditingService {
                 draft.salePrice(),
                 draft.promotionPrice(),
                 draft.promotionMinQuantity(),
-                original.isManualPriceProduct()
+                original.isManualPriceProduct(),
+                original.origin(),
+                original.sourceProductKey(),
+                original.sourceSnapshotId(),
+                original.stopped()
         );
     }
 

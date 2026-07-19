@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from network_diagnostics import NetworkDiagnosticResult
 
@@ -15,6 +16,80 @@ class ConnectionPresentation:
     warning_text: str
     guidance_text: str
     can_copy_connection: bool
+
+
+@dataclass(frozen=True)
+class LiveSyncPresentation:
+    phase: str
+    reason_code: str
+    elapsed_text: str
+    consecutive_failures: int
+    circuit_state: str
+    last_success: str
+    snapshot_id: str
+    counts_text: str
+    can_sync_now: bool
+    can_cancel: bool
+
+
+def present_live_sync(controller: Any) -> LiveSyncPresentation:
+    pipeline = getattr(controller, "v2_pipeline", None)
+    result = getattr(controller, "latest_v2_result", None)
+    state = _coordinator_state(pipeline)
+    if state is None:
+        phase = "LOCKED" if pipeline is None else "IDLE"
+        reason = "G0B_LOCKED" if pipeline is None else "READY"
+        elapsed_ms = 0.0
+        failures = 0
+        circuit = "CLOSED"
+    else:
+        phase = _enum_text(getattr(state, "phase", "IDLE"))
+        reason = str(getattr(state, "reason_code", ""))
+        elapsed_ms = float(getattr(state, "elapsed_ms", 0.0) or 0.0)
+        failures = int(getattr(state, "consecutive_failures", 0) or 0)
+        circuit = _enum_text(getattr(state, "circuit_state", "CLOSED"))
+
+    snapshot_id = "无"
+    counts_text = "商品 0 / 候选 0 / 问题 0"
+    last_success = "无"
+    if result is not None:
+        publish = getattr(result, "publish", None)
+        snapshot_id = str(getattr(publish, "snapshot_id", "") or "无")
+        counts_text = (
+            f"商品 {int(getattr(result, 'product_count', 0) or 0)} / "
+            f"候选 {int(getattr(result, 'promotion_candidate_count', 0) or 0)} / "
+            f"问题 {int(getattr(result, 'validation_issue_count', 0) or 0)}"
+        )
+        manifest = getattr(publish, "manifest", {}) or {}
+        last_success = str(manifest.get("createdAt") or manifest.get("created_at") or "已成功")
+
+    coordinator = getattr(pipeline, "coordinator", None) if pipeline is not None else None
+    can_cancel = bool(coordinator and callable(getattr(coordinator, "cancel", None)))
+    return LiveSyncPresentation(
+        phase=phase,
+        reason_code=reason,
+        elapsed_text=f"{elapsed_ms / 1000:.2f} 秒",
+        consecutive_failures=failures,
+        circuit_state=circuit,
+        last_success=last_success,
+        snapshot_id=snapshot_id,
+        counts_text=counts_text,
+        can_sync_now=pipeline is not None,
+        can_cancel=can_cancel,
+    )
+
+
+def _coordinator_state(pipeline: Any):
+    if pipeline is None:
+        return None
+    coordinator = getattr(pipeline, "coordinator", None)
+    if coordinator is not None:
+        return getattr(coordinator, "state", None)
+    return getattr(pipeline, "state", None)
+
+
+def _enum_text(value: Any) -> str:
+    return str(getattr(value, "value", value))
 
 
 def present_connection(diagnostic: NetworkDiagnosticResult) -> ConnectionPresentation:

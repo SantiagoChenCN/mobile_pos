@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "schemaVersion": 2,
+  "snapshotId": "ms2011-20260717T180001Z-abcdef123456",
+  "sourceType": "ms2011_live",
+  "createdAtUtc": "2026-07-17T18:00:01Z",
+  "sizeBytes": 1048576,
+  "sha256": "abcdef1234560000000000000000000000000000000000000000000000000000",
+  "minimumAppVersion": 1,
+  "productCount": 11195,
+  "categoryCount": 128,
+  "unitCount": 12,
+  "promotionCandidateCount": 41,
+  "verifiedPromotionCount": 0,
+  "validationIssueCount": 13,
+  "downloadPath": "/v2/snapshots/ms2011-20260717T180001Z-abcdef123456.db"
+}

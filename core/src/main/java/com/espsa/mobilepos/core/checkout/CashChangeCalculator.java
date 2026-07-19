@@ -11,6 +11,6 @@ public final class CashChangeCalculator {
         if (received.compareTo(total) < 0) {
             throw new IllegalArgumentException("Cash received is less than total");
         }
-        return new CashChangeResult(total, received, Money.of(received.amount() - total.amount()));
+        return new CashChangeResult(total, received, received.minusCapped(total));
     }
 }

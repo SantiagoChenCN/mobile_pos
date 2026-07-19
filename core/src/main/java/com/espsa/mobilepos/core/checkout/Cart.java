@@ -2,6 +2,7 @@ package com.espsa.mobilepos.core.checkout;
 
 import com.espsa.mobilepos.core.model.Discount;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.Quantity;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -11,6 +12,7 @@ import java.util.UUID;
 
 public final class Cart {
     private final String id;
+    private final PricingSnapshotRef pricingSnapshotRef;
     private final List<CartLine> lines;
     private Discount cartDiscount;
 
@@ -19,13 +21,22 @@ public final class Cart {
     }
 
     public Cart(String id) {
+        this(id, PricingSnapshotRef.localLibrary(Collections.<Product>emptyList()));
+    }
+
+    public Cart(String id, PricingSnapshotRef pricingSnapshotRef) {
         this.id = id == null || id.trim().isEmpty() ? UUID.randomUUID().toString() : id;
+        this.pricingSnapshotRef = Objects.requireNonNull(pricingSnapshotRef, "pricingSnapshotRef");
         this.lines = new ArrayList<CartLine>();
         this.cartDiscount = Discount.NONE;
     }
 
     public String id() {
         return id;
+    }
+
+    public PricingSnapshotRef pricingSnapshotRef() {
+        return pricingSnapshotRef;
     }
 
     public List<CartLine> lines() {
@@ -36,17 +47,15 @@ public final class Cart {
         return cartDiscount;
     }
 
-    public CartLine addProduct(Product product, int quantity) {
+    public CartLine addProduct(Product product, Quantity quantity) {
         Objects.requireNonNull(product, "product");
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("Quantity must be greater than zero");
-        }
+        Objects.requireNonNull(quantity, "quantity");
 
         if (!product.isManualPriceProduct()) {
             for (int index = 0; index < lines.size(); index++) {
                 CartLine existing = lines.get(index);
                 if (sameProduct(existing.product(), product)) {
-                    CartLine updated = existing.withQuantity(Math.addExact(existing.quantity(), quantity));
+                    CartLine updated = existing.withQuantity(existing.quantityValue().add(quantity));
                     lines.set(index, updated);
                     return updated;
                 }

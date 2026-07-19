@@ -6,8 +6,13 @@ import com.espsa.mobilepos.core.importer.ProductImportResult;
 import com.espsa.mobilepos.core.library.ImportSnapshotInfo;
 import com.espsa.mobilepos.core.library.ProductLibraryMetadata;
 import com.espsa.mobilepos.core.library.ProductLibraryState;
+import com.espsa.mobilepos.core.catalog.ProductMigrationIssue;
+import com.espsa.mobilepos.core.catalog.ProductMigrationReport;
+import com.espsa.mobilepos.core.catalog.ProductMigrationSelection;
+import com.espsa.mobilepos.core.catalog.ProductMigrationService;
 import com.espsa.mobilepos.core.model.Money;
 import com.espsa.mobilepos.core.model.Product;
+import com.espsa.mobilepos.core.model.ProductOrigin;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -15,23 +20,43 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 public final class ProductLocalStore {
     private static final String PRODUCTS_FILE_NAME = "products.json";
     private static final String METADATA_FILE_NAME = "product_library_meta.json";
+    private static final String MIGRATION_REPORT_FILE_NAME = "product_migration_report.json";
     private static final String SNAPSHOT_DIRECTORY_NAME = "import_snapshots";
     private static final int MAX_RECENT_IMPORTS = 5;
+    private static final String LEGACY_ORIGIN_REASON = "Legacy product provenance is ambiguous; choose LOCAL or LEGACY_IMPORT";
+    private final AtomicFileMover atomicFileMover;
+
+    public ProductLocalStore() {
+        this((source, destination) -> Files.move(source.toPath(), destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING));
+    }
+
+    ProductLocalStore(AtomicFileMover atomicFileMover) {
+        this.atomicFileMover = atomicFileMover;
+    }
 
     public ProductLibraryState loadState(Context context) throws ProductStoreException {
         File productsFile = currentProductsFile(context);
         if (!productsFile.exists()) {
             return new ProductLibraryState(Collections.<Product>emptyList(), loadMetadata(context));
         }
-        return new ProductLibraryState(readProducts(productsFile), loadMetadata(context));
+        ProductReadResult read = readProducts(productsFile);
+        if (!read.migrationReport.isEmpty()) {
+            writeMigrationReport(migrationReportFile(context), read.migrationReport);
+        }
+        return new ProductLibraryState(read.products, loadMetadata(context));
     }
 
     public void saveCurrentProducts(
@@ -67,7 +92,7 @@ public final class ProductLocalStore {
 
     public ProductLibraryState restoreSnapshot(Context context, String snapshotId) throws ProductStoreException {
         ImportSnapshotInfo snapshot = findSnapshotInfo(context, snapshotId);
-        List<Product> products = readProducts(snapshotFile(context, snapshot.snapshotId()));
+        List<Product> products = readProducts(snapshotFile(context, snapshot.snapshotId())).products;
         writeProducts(currentProductsFile(context), products);
         ProductLibraryMetadata metadata = metadataForRestore(context, snapshot);
         writeMetadata(metadataFile(context), metadata);
@@ -99,7 +124,71 @@ public final class ProductLocalStore {
     }
 
     public List<Product> loadSnapshotProducts(Context context, String snapshotId) throws ProductStoreException {
-        return readProducts(snapshotFile(context, snapshotId));
+        return readProducts(snapshotFile(context, snapshotId)).products;
+    }
+
+    public ProductMigrationReport loadMigrationReport(Context context) throws ProductStoreException {
+        return loadMigrationReportFromFile(migrationReportFile(context));
+    }
+
+    ProductLibraryState loadStateForTest(File filesDirectory) throws ProductStoreException {
+        File productsFile = new File(filesDirectory, PRODUCTS_FILE_NAME);
+        if (!productsFile.exists()) {
+            return new ProductLibraryState(Collections.<Product>emptyList(), ProductLibraryMetadata.empty());
+        }
+        ProductReadResult read = readProducts(productsFile);
+        if (!read.migrationReport.isEmpty()) {
+            writeMigrationReport(new File(filesDirectory, MIGRATION_REPORT_FILE_NAME), read.migrationReport);
+        }
+        return new ProductLibraryState(read.products, ProductLibraryMetadata.empty());
+    }
+
+    ProductMigrationReport loadMigrationReportForTest(File filesDirectory) throws ProductStoreException {
+        return loadMigrationReportFromFile(new File(filesDirectory, MIGRATION_REPORT_FILE_NAME));
+    }
+
+    void writeProductsForTest(File filesDirectory, List<Product> products) throws ProductStoreException {
+        writeProducts(new File(filesDirectory, PRODUCTS_FILE_NAME), products);
+    }
+
+    ProductLibraryState applyMigrationSelectionsForTest(
+            File filesDirectory,
+            List<ProductMigrationSelection> selections
+    ) throws ProductStoreException {
+        ProductLibraryState state = loadStateForTest(filesDirectory);
+        ProductMigrationReport report = loadMigrationReportForTest(filesDirectory);
+        ProductMigrationService migration = new ProductMigrationService();
+        List<Product> products = migration.applySelections(state.products(), report, selections);
+        writeProducts(new File(filesDirectory, PRODUCTS_FILE_NAME), products);
+        writeMigrationReport(new File(filesDirectory, MIGRATION_REPORT_FILE_NAME), migration.remainingReport(report, selections));
+        return new ProductLibraryState(products, state.metadata());
+    }
+
+    private ProductMigrationReport loadMigrationReportFromFile(File file) throws ProductStoreException {
+        if (!file.exists()) {
+            return ProductMigrationReport.empty();
+        }
+        try {
+            JSONArray issues = new JSONObject(readUtf8(file)).getJSONArray("issues");
+            List<ProductMigrationIssue> result = new ArrayList<ProductMigrationIssue>();
+            for (int i = 0; i < issues.length(); i++) {
+                JSONObject item = issues.getJSONObject(i);
+                result.add(new ProductMigrationIssue(item.getString("productId"), item.optString("barcode", ""), item.getString("reason")));
+            }
+            return new ProductMigrationReport(result);
+        } catch (Exception ex) {
+            throw new ProductStoreException("读取商品迁移报告失败", ex);
+        }
+    }
+
+    public ProductLibraryState applyMigrationSelections(Context context, List<ProductMigrationSelection> selections) throws ProductStoreException {
+        ProductLibraryState state = loadState(context);
+        ProductMigrationReport report = loadMigrationReport(context);
+        ProductMigrationService migration = new ProductMigrationService();
+        List<Product> products = migration.applySelections(state.products(), report, selections);
+        writeProducts(currentProductsFile(context), products);
+        writeMigrationReport(migrationReportFile(context), migration.remainingReport(report, selections));
+        return new ProductLibraryState(products, state.metadata());
     }
 
     private ProductLibraryMetadata metadataForImport(Context context, ImportSnapshotInfo snapshot) throws ProductStoreException {
@@ -180,14 +269,19 @@ public final class ProductLocalStore {
         }
     }
 
-    private List<Product> readProducts(File file) throws ProductStoreException {
+    private ProductReadResult readProducts(File file) throws ProductStoreException {
         try {
             JSONArray array = new JSONArray(readUtf8(file));
             List<Product> products = new ArrayList<Product>();
+            List<ProductMigrationIssue> migrationIssues = new ArrayList<ProductMigrationIssue>();
             for (int i = 0; i < array.length(); i++) {
-                products.add(productFromJson(array.getJSONObject(i)));
+                JSONObject item = array.getJSONObject(i);
+                if (!item.has("origin") || item.isNull("origin")) {
+                    migrationIssues.add(new ProductMigrationIssue(item.getString("id"), item.optString("barcode", ""), LEGACY_ORIGIN_REASON));
+                }
+                products.add(productFromJson(item));
             }
-            return products;
+            return new ProductReadResult(products, new ProductMigrationReport(migrationIssues));
         } catch (Exception ex) {
             throw new ProductStoreException("读取商品库失败", ex);
         }
@@ -208,17 +302,23 @@ public final class ProductLocalStore {
     }
 
     private Product productFromJson(JSONObject item) throws Exception {
-        long promotionPrice = item.optLong("promotionPrice", 0);
+        Money promotionPrice = moneyFromJson(item, "promotionPrice", true);
+        ProductOrigin origin = item.has("origin") && !item.isNull("origin")
+                ? ProductOrigin.valueOf(item.getString("origin")) : ProductOrigin.LEGACY_IMPORT;
         return new Product(
                 item.getString("id"),
                 item.optString("barcode", ""),
                 item.getString("name"),
                 item.optString("category", Product.MANUAL_ALMACEN_CATEGORY),
                 item.optString("unitName", ""),
-                Money.of(item.getLong("salePrice")),
-                promotionPrice > 0 ? Money.of(promotionPrice) : null,
+                moneyFromJson(item, "salePrice", false),
+                promotionPrice,
                 item.optInt("promotionMinQuantity", 0),
-                item.optBoolean("manualPriceProduct", false)
+                item.optBoolean("manualPriceProduct", false),
+                origin,
+                item.optString("sourceProductKey", ""),
+                item.optString("sourceSnapshotId", ""),
+                item.optBoolean("stopped", false)
         );
     }
 
@@ -229,11 +329,24 @@ public final class ProductLocalStore {
         item.put("name", product.name());
         item.put("category", product.category());
         item.put("unitName", product.unitName());
-        item.put("salePrice", product.salePrice().amount());
-        item.put("promotionPrice", product.promotionPrice() == null ? 0 : product.promotionPrice().amount());
+        item.put("salePrice", product.salePrice().canonicalText());
+        item.put("promotionPrice", product.promotionPrice() == null ? "0" : product.promotionPrice().canonicalText());
         item.put("promotionMinQuantity", product.promotionMinQuantity());
         item.put("manualPriceProduct", product.isManualPriceProduct());
+        item.put("origin", product.origin().name());
+        item.put("sourceProductKey", product.sourceProductKey());
+        item.put("sourceSnapshotId", product.sourceSnapshotId());
+        item.put("stopped", product.stopped());
         return item;
+    }
+
+    private Money moneyFromJson(JSONObject item, String field, boolean zeroMeansNull) throws Exception {
+        Object raw = item.has(field) && !item.isNull(field) ? item.get(field) : "0";
+        Money money = Money.of(String.valueOf(raw));
+        if (zeroMeansNull && money.isZero()) {
+            return null;
+        }
+        return money;
     }
 
     private ProductLibraryMetadata metadataFromJson(JSONObject object) {
@@ -300,12 +413,39 @@ public final class ProductLocalStore {
         }
     }
 
+    private void writeMigrationReport(File file, ProductMigrationReport report) throws ProductStoreException {
+        try {
+            JSONObject root = new JSONObject();
+            JSONArray issues = new JSONArray();
+            for (ProductMigrationIssue issue : report.issues()) {
+                JSONObject item = new JSONObject();
+                item.put("productId", issue.productId());
+                item.put("barcode", issue.barcode());
+                item.put("reason", issue.reason());
+                JSONArray choices = new JSONArray();
+                for (ProductOrigin origin : issue.allowedChoices()) {
+                    choices.put(origin.name());
+                }
+                item.put("allowedChoices", choices);
+                issues.put(item);
+            }
+            root.put("issues", issues);
+            writeUtf8(file, root.toString());
+        } catch (Exception ex) {
+            throw new ProductStoreException("保存商品迁移报告失败", ex);
+        }
+    }
+
     private File currentProductsFile(Context context) {
         return new File(context.getFilesDir(), PRODUCTS_FILE_NAME);
     }
 
     private File metadataFile(Context context) {
         return new File(context.getFilesDir(), METADATA_FILE_NAME);
+    }
+
+    private File migrationReportFile(Context context) {
+        return new File(context.getFilesDir(), MIGRATION_REPORT_FILE_NAME);
     }
 
     private File snapshotDirectory(Context context) {
@@ -319,6 +459,9 @@ public final class ProductLocalStore {
     private String readUtf8(File file) throws Exception {
         FileInputStream input = new FileInputStream(file);
         try {
+            if (file.length() > Integer.MAX_VALUE) {
+                throw new IOException("Product file is too large");
+            }
             byte[] bytes = new byte[(int) file.length()];
             int offset = 0;
             while (offset < bytes.length) {
@@ -328,6 +471,9 @@ public final class ProductLocalStore {
                 }
                 offset += read;
             }
+            if (offset != bytes.length) {
+                throw new IOException("Truncated product file");
+            }
             return new String(bytes, StandardCharsets.UTF_8);
         } finally {
             input.close();
@@ -335,11 +481,34 @@ public final class ProductLocalStore {
     }
 
     private void writeUtf8(File file, String value) throws Exception {
-        FileOutputStream output = new FileOutputStream(file, false);
+        File parent = file.getParentFile();
+        if (parent == null || (!parent.exists() && !parent.mkdirs())) {
+            throw new IOException("Cannot create product storage directory");
+        }
+        File temporary = new File(parent, "." + file.getName() + "." + UUID.randomUUID() + ".tmp");
         try {
-            output.write(value.getBytes(StandardCharsets.UTF_8));
+            try (FileOutputStream output = new FileOutputStream(temporary, false)) {
+                output.write(value.getBytes(StandardCharsets.UTF_8));
+                output.flush();
+                output.getFD().sync();
+            }
+            atomicFileMover.move(temporary, file);
         } finally {
-            output.close();
+            if (temporary.exists() && !temporary.delete()) {
+                throw new IOException("Cannot clean failed product temporary file");
+            }
+        }
+    }
+
+    interface AtomicFileMover { void move(File source, File destination) throws IOException; }
+
+    private static final class ProductReadResult {
+        private final List<Product> products;
+        private final ProductMigrationReport migrationReport;
+
+        private ProductReadResult(List<Product> products, ProductMigrationReport migrationReport) {
+            this.products = products;
+            this.migrationReport = migrationReport;
         }
     }
 }

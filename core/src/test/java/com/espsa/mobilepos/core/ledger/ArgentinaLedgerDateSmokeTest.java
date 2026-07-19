@@ -17,10 +17,10 @@ public final class ArgentinaLedgerDateSmokeTest {
                 "sale-boundary",
                 Instant.parse("2026-07-11T02:30:00Z"),
                 PaymentMethod.TRANSFERENCIA,
-                Money.of(100),
+                Money.of("100"),
                 Discount.NONE,
                 Money.ZERO,
-                Money.of(100),
+                Money.of("100"),
                 SaleStatus.NORMAL,
                 Collections.<SaleLine>emptyList()
         ));

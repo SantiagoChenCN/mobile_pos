@@ -12,6 +12,8 @@ public interface ProductRepository {
 
     Optional<Product> findByBarcode(String barcode);
 
+    List<Product> findAllByBarcode(String barcode);
+
     List<Product> searchByName(String query, int limit);
 
     void replaceAll(List<Product> products);

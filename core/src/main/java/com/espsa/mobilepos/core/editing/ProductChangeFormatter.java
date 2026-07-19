@@ -39,9 +39,7 @@ public final class ProductChangeFormatter {
         if (before == null && after == null) {
             return;
         }
-        long beforeAmount = before == null ? 0 : before.amount();
-        long afterAmount = after == null ? 0 : after.amount();
-        if (beforeAmount != afterAmount) {
+        if (before == null || after == null || before.compareTo(after) != 0) {
             changes.add(new ProductChange(labelZh, labelEs, money(before), money(after)));
         }
     }
@@ -80,7 +78,7 @@ public final class ProductChangeFormatter {
     }
 
     private String money(Money money) {
-        return money == null ? "" : "$" + money.amount();
+        return money == null ? "" : "$" + money.canonicalText();
     }
 
     private String value(String value) {
