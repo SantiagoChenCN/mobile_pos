@@ -621,34 +621,34 @@ cd E:\手机收银软件开发\pc-sync-tool
 ### 18.1 电脑端后端 Agent
 
 ```text
-阅读 修改方案/argentina_time_and_cart_merge_plan.md。
+阅读 docs/plans/argentina_time_and_cart_merge_plan.md。
 你负责 pc-sync-tool 的阿根廷时间后端工具和测试。新增独立 time_display.py，把 UTC/带偏移 ISO 时间安全转换成 yyyy-MM-dd HH:mm:ss ART。优先使用 America/Argentina/Buenos_Aires，并为 Windows/PyInstaller 缺少时区数据库提供固定 UTC-03 后备。不要修改 manifest、日志 JSON、备份时间和鸣盛数据库。保持模块化和函数拆分，完成后运行完整 Python 测试与 compileall。
 ```
 
 ### 18.2 电脑端前端 Agent
 
 ```text
-阅读 修改方案/argentina_time_and_cart_merge_plan.md。
+阅读 docs/plans/argentina_time_and_cart_merge_plan.md。
 你负责 pc-sync-tool 用户可见时间接入。等待 time_display.py 接口稳定后，将最近备份、最近请求和日志列表的原始时间统一通过 format_argentina_time() 展示。UI 不解析 ISO，不直接减 3 小时，不修改存储数据。保持模块化，完成后补充 UI/展示测试。
 ```
 
 ### 18.3 手机端后端 Agent
 
 ```text
-阅读 修改方案/argentina_time_and_cart_merge_plan.md。
+阅读 docs/plans/argentina_time_and_cart_merge_plan.md。
 你负责 android-emergency-pos 的阿根廷业务时区和购物车合并。新增 ArgentinaTime，保持 UTC Instant/ISO 存储，仅提供阿根廷显示和 today()。AppServices、LedgerService 和 CheckoutService 使用 America/Argentina/Buenos_Aires。修改 core/Cart.addProduct：正式商品按 product.id 合并数量，保留原行 ID、手动单价和折扣；手动 almacen 商品不合并。合并逻辑只放 core，不写入 UI。补齐日期边界、重复商品、促销、调整保留和手动商品测试。
 ```
 
 ### 18.4 手机端前端 Agent
 
 ```text
-阅读 修改方案/argentina_time_and_cart_merge_plan.md。
+阅读 docs/plans/argentina_time_and_cart_merge_plan.md。
 你负责 android-emergency-pos 的时间展示和购物车 UI 回归。将上次检查、上次同步、manifest、导入快照和销售时间统一调用 ArgentinaTime；今天销售和日账使用 ArgentinaTime.today()。不要解析 ISO 或直接做 UTC-3。购物车合并由 core 完成，前端只确认重复扫码/输入/搜索后重新渲染为单行累加数量，并回归改价、折扣、删除和减数量。
 ```
 
 ### 18.5 验收 Agent
 
 ```text
-阅读 修改方案/argentina_time_and_cart_merge_plan.md，不做实现。
+阅读 docs/plans/argentina_time_and_cart_merge_plan.md，不做实现。
 检查 UTC 是否仍用于存储和传输，所有用户可见时间是否统一为 ART；检查购物车合并是否只在 core/Cart 实现，正式商品按 product.id 合并并保留调整，手动 almacen 不合并。运行电脑端完整测试、core smoke、时间/购物车测试和 Android 构建。最后检查新 EXE/ZIP/APK 时间戳，并按文档完成时区切换和重复商品手工验收。
 ```

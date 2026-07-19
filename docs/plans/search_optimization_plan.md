@@ -445,7 +445,7 @@ app.SearchTaskRunner
 后续让 agent 实现时，可以直接使用下面提示词：
 
 ```text
-请按 E:\手机收银软件开发\修改方案\search_optimization_plan.md 优化商品搜索体验。
+请按 docs/plans/search_optimization_plan.md 优化商品搜索体验。
 
 重点要求：
 1. 保持项目现有原生 Android Java、app/core 分层，不引入 Room、Compose 或大型搜索库。

@@ -73,6 +73,18 @@ The backend opens the configured source database read-only and never writes to
 the Mingsheng software directory. Tool-owned writes are limited to
 `%APPDATA%\MobilePosSync` and `%LOCALAPPDATA%\MobilePosSync`.
 
+## MS2011 Development Status
+
+The MS2011 live pipeline is paused at `L3/S10`. The current source includes
+offline v2 contracts, fixed QueryId read-only adapters, schema and promotion
+candidate normalization, SQLite v2 publication, HTTP v2 compatibility,
+permission diagnostics, and synchronization coordination tests. It does not
+connect to a real MS2011 database in this release path, and it cannot enable
+live mode while the G0B production read-only identity gate is locked.
+
+The current PC regression is 226 passing tests and `compileall` passes. No EXE
+or ZIP was rebuilt for this source-only GitHub synchronization batch.
+
 The current validated release has 50 passing tests and a successful
 `compileall` check. Real phone-to-PC LAN testing is still required on the
 target checkout computer and phone.

@@ -1,6 +1,7 @@
 **/build/
 .gradle/
 local.properties
+.codex/local-workspace.md
 *.class
 dist/*.log
 dist/*.tmp

@@ -621,7 +621,7 @@ http://电脑局域网IP:8765/health?token=电脑工具显示的Token
 ```text
 你负责 pc-sync-tool 的电脑端后端连接修复。
 
-先阅读 修改方案/computer_phone_sync_connection_fix_plan.md、现有 HTTP 服务、controller、配置和测试。
+先阅读 docs/plans/computer_phone_sync_connection_fix_plan.md、现有 HTTP 服务、controller、配置和测试。
 
 核心任务：
 1. 将 HTTP 实际监听地址与展示给手机的局域网地址分离。
@@ -637,7 +637,7 @@ http://电脑局域网IP:8765/health?token=电脑工具显示的Token
 ```text
 你负责 pc-sync-tool 的 PySide6 前端连接状态修复。
 
-先阅读 修改方案/computer_phone_sync_connection_fix_plan.md，并等待电脑端后端接口稳定。
+先阅读 docs/plans/computer_phone_sync_connection_fix_plan.md，并等待电脑端后端接口稳定。
 
 核心任务：
 1. 分别显示实际监听地址和供手机输入的局域网地址。
@@ -653,7 +653,7 @@ http://电脑局域网IP:8765/health?token=电脑工具显示的Token
 ```text
 你负责 android-emergency-pos 的手机端同步后端修复。
 
-先阅读 修改方案/computer_phone_sync_connection_fix_plan.md、ComputerSyncClient、ComputerSyncService、ComputerSyncConfig 和 AndroidManifest.xml。
+先阅读 docs/plans/computer_phone_sync_connection_fix_plan.md、ComputerSyncClient、ComputerSyncService、ComputerSyncConfig 和 AndroidManifest.xml。
 
 核心任务：
 1. 允许当前局域网 HTTP 架构，并验证最终 APK 合并 manifest。
@@ -670,7 +670,7 @@ http://电脑局域网IP:8765/health?token=电脑工具显示的Token
 ```text
 你负责 android-emergency-pos 导入页的电脑连接 UI 修复。
 
-先阅读 修改方案/computer_phone_sync_connection_fix_plan.md，并等待手机端后端结构化错误接口稳定。
+先阅读 docs/plans/computer_phone_sync_connection_fix_plan.md，并等待手机端后端结构化错误接口稳定。
 
 核心任务：
 1. 保持 IP、端口、Token 手动输入。
@@ -686,7 +686,7 @@ http://电脑局域网IP:8765/health?token=电脑工具显示的Token
 ```text
 你负责验收电脑端与手机端同步连接修复，不负责实现。
 
-先阅读 修改方案/computer_phone_sync_connection_fix_plan.md。
+先阅读 docs/plans/computer_phone_sync_connection_fix_plan.md。
 
 按以下顺序验收：
 1. 静态检查电脑端监听地址与展示地址是否分离。
@@ -699,4 +699,3 @@ http://电脑局域网IP:8765/health?token=电脑工具显示的Token
 
 发现问题时必须按电脑端后端、电脑端前端、手机端后端、手机端前端分类报告，并提供文件和行号证据。
 ```
-

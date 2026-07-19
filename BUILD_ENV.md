@@ -1,35 +1,33 @@
 # Build Environment
 
-The current Windows build environment is portable and lives on the E drive:
+Machine-specific paths are intentionally not committed. Keep the local JDK,
+Android SDK, Gradle cache, Python environment, sample-data locations, and any
+ASCII-only build mirror in the ignored `.codex/local-workspace.md` file.
 
-- Build tools root: `E:\AndroidBuildEnv`
-- Android SDK: `E:\AndroidBuildEnv\android-sdk`
-- Gradle: `E:\AndroidBuildEnv\gradle\gradle-8.11`
-- JDK 17: `E:\AndroidBuildEnv\jdk\jdk-17.0.19+10`
-- Gradle cache: `E:\AndroidBuildEnv\.gradle-cache`
+## Android Prerequisites
 
-The project is also mirrored to an ASCII-only build path because Android Gradle Plugin path checks can be fragile with non-ASCII Windows paths:
+- JDK 17.
+- Android SDK compatible with the checked-in Android Gradle Plugin settings.
+- A project-root `local.properties` containing the local SDK path.
 
-- Source project: `E:\手机收银软件开发\android-emergency-pos`
-- Build mirror: `E:\AndroidEmergencyPos`
+Example `local.properties` entry:
 
-Build command used on this machine:
+```properties
+sdk.dir=<android-sdk-path>
+```
+
+Run the repository build entry point from the project root:
 
 ```powershell
-$env:JAVA_HOME='E:\AndroidBuildEnv\jdk\jdk-17.0.19+10'
-$env:PATH="$env:JAVA_HOME\bin;$env:PATH"
-powershell -ExecutionPolicy Bypass -File 'E:\AndroidEmergencyPos\scripts\build-debug-apk.ps1'
+powershell -ExecutionPolicy Bypass -File .\scripts\build-debug-apk.ps1
 ```
 
-Debug APK output:
+The script may depend on the current developer machine's local tool layout.
+Before using it on a fresh clone, compare its assumptions with the ignored local
+workspace notes. Do not commit actual machine paths or generated artifacts.
 
-```text
-E:\AndroidEmergencyPos\app\build\outputs\apk\debug\app-debug.apk
-```
+## PC Tool
 
-For a fresh checkout on another Windows machine:
-
-1. Install JDK 17.
-2. Install Android SDK with Android Gradle Plugin compatible build tools.
-3. Create `local.properties` in the project root with `sdk.dir=...`.
-4. Run `scripts\build-debug-apk.ps1`.
+See [pc-sync-tool/README.md](pc-sync-tool/README.md) for Python prerequisites,
+tests, and packaging entry points. Packaging and release builds run only at the
+stage gates defined by the implementation plan.

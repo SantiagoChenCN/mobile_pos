@@ -1,82 +1,101 @@
 # Mobile POS
 
-Offline Android emergency POS app for small grocery checkout.
+Mobile POS is an offline-first Android emergency checkout application for small
+grocery stores. It is designed to keep essential lookup and checkout workflows
+available when the desktop POS or local network is unavailable.
 
-The app is designed for a single phone running independently from the desktop POS system. It can import the exported Ming Sheng / ESpsa product database, search products by barcode or keyword, build a cart, apply line or cart discounts, save detailed sales records, and review/export daily totals.
+## Overview
 
-## Project Layout
+The Android app imports or receives verified product snapshots, searches by
+barcode or text, builds an order with fixed pricing inputs, records payments,
+and keeps a local sales ledger. The optional Windows companion exposes
+user-approved, read-only snapshots over a token-protected LAN connection.
 
-- `app/`: native Android app, screens, scanner, database import, local storage.
-- `core/`: pure Java business logic for catalog search, pricing, checkout, ledger, and export.
-- `scripts/`: Windows scripts for preparing the Android build environment and building a debug APK.
-- `docs/`: design document and implementation notes.
-- `dist/EmergencyPOS-debug.apk`: latest debug APK build for direct phone installation.
+The phone remains independently usable with its last accepted local data. Live
+database access and production synchronization are controlled by explicit
+safety gates.
 
-## Current Features
+## Architecture
 
-- Android 10+ target.
-- Chinese / Spanish language switch.
-- Offline product import from the ESpsa `AGT_MAIN` SQLite database.
-- Product lookup by barcode or keyword.
-- Keyword search returns all matching products, with accent-insensitive and connector-word tolerant matching.
-- Cart checkout with cash, card, QR, and transferencia payment methods.
-- Manual almacen item entry for emergency/weighed products.
-- Line-level and cart-level percent or fixed discounts, with undo/clear controls.
-- Daily summary and transaction detail views.
-- CSV export for later reconciliation.
+- `app/`: native Android UI, import adapters, local persistence, and sync client.
+- `core/`: pure Java domain logic for catalog, pricing, cart, checkout, ledger,
+  and export.
+- `pc-sync-tool/`: Python/PySide6 Windows companion for read-only extraction,
+  validated snapshot publication, and LAN delivery.
+- `docs/`: current state, durable plans, historical log, and design references.
+- `scripts/`: local build and repository validation entry points.
 
-## MS2011 Development Status
+## Stable Features
 
-The MS2011 live product and promotion sync work is currently paused at
-`L3/S10`. Offline contracts and the PC-side v2 pipeline are being maintained,
-but the live SQL path is not enabled. `MB-07`, `CB-01`, `CB-02`, `CB-03`, and
-offline `G4` are recorded as passed; `MF-05` has unverified partial Android
-changes and `MF-02` is blocked until stale-warning thresholds are defined.
+- Android 10+ native Java application with Chinese and Spanish UI.
+- Offline product import and persistent local catalog.
+- Barcode lookup and accent-insensitive multi-keyword search.
+- Formal-product cart-line merging with separate manual `almacen` items.
+- Exact cart pricing, manual price changes, line/cart discounts, and multiple
+  payment methods.
+- Transaction detail, daily summary, voiding, and CSV export.
+- Argentina business-time handling for user-visible timestamps and day bounds.
+- Product editing and import rollback for phone-local products.
+- PC companion with explicit source selection, connection diagnostics,
+  token-protected HTTP delivery, immutable manifests, and hash validation.
+- Versioned snapshot validation and order-boundary activation on Android.
 
-The production gate remains locked because the tested database identity has
-`WRITE_CAPABILITY_PRESENT`. This repository update contains source, tests,
-fixtures, plans, and status documents only. It does not include live database
-files, production snapshots, probe packages, build output, or Python caches.
+## Safety Model
 
-## MS2011 Development Status
+- Android never connects directly to SQL Server.
+- The PC database adapter is limited to approved fixed read-only QueryIds.
+- Arbitrary SQL, database writes, DDL, service control, MDF/LDF manipulation,
+  and automatic firewall changes are prohibited.
+- Candidate snapshots are validated before publication and again before phone
+  activation; failure preserves the last accepted snapshot.
+- An active cart keeps its original product/pricing snapshot until the order is
+  completed or cancelled.
+- Only promotion rules backed by verified black-box evidence may calculate
+  automatically.
+- Production access remains disabled until every applicable safety gate passes.
 
-The MS2011 live product and promotion sync work is currently paused at
-`L3/S10`. Offline contracts and the PC-side v2 pipeline are being maintained,
-but the live SQL path is not enabled. `MB-07`, `CB-01`, `CB-02`, `CB-03`, and
-offline `G4` are recorded as passed; `MF-05` has unverified partial Android
-changes and `MF-02` is blocked until stale-warning thresholds are defined.
+## Repository Layout
 
-The production gate remains locked because the tested database identity has
-`WRITE_CAPABILITY_PRESENT`. This repository update contains source, tests,
-fixtures, plans, and status documents only. It does not include live database
-files, production snapshots, probe packages, build output, or Python caches.
-- Argentina business timezone (`America/Argentina/Buenos_Aires`) for user-visible timestamps and daily boundaries.
-- Formal products with the same stable product ID merge into one cart line; manual `almacen` items remain separate.
-- Computer sync with LAN health checks, manifest/hash validation, confirmed import, and structured connection errors.
-- Manual phone connection using the PC tool's displayed private IPv4 address, port, and token; QR setup is no longer required for PC sync.
+```text
+app/                 Android application
+core/                Java domain layer
+pc-sync-tool/        Windows synchronization companion
+docs/plans/          Product and implementation plans
+docs/archive/        Preserved historical status snapshots
+scripts/             Build and consistency checks
+```
 
 ## Build
 
-This project uses a portable Windows build environment under `E:\AndroidBuildEnv`.
+Prerequisites are JDK 17 and an Android SDK compatible with the checked-in
+Gradle configuration. Store machine-specific SDK paths in `local.properties`
+and local workspace notes outside version control.
+
+Android debug build entry point:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-debug-apk.ps1
 ```
 
-The generated APK is written to:
+PC development and test instructions are in
+[pc-sync-tool/README.md](pc-sync-tool/README.md). Machine-independent setup
+guidance is in [BUILD_ENV.md](BUILD_ENV.md).
 
-```text
-app\build\outputs\apk\debug\app-debug.apk
-```
+## Documentation
 
-If building on another machine, install Android SDK and JDK 17, then create a local `local.properties` file with:
+- [Active iteration](docs/ACTIVE_ITERATION.md): only current task, pause point,
+  blockers, and next exact action.
+- [Implementation status](docs/IMPLEMENTATION_STATUS.md): stable capabilities,
+  stage gates, remaining acceptance, and accepted artifact status.
+- [Project dashboard](docs/PROJECT_STATUS.md): short Chinese project overview.
+- [Product plan](docs/plans/ms2011_live_product_promotion_sync_plan.md): product
+  behavior and hard safety baseline.
+- [Implementation plan](docs/plans/ms2011_live_product_promotion_sync_implementation_plan.md):
+  task contracts, dependencies, ownership, and acceptance gates.
+- [Project log](docs/PROJECT_LOG.md): append-only historical record.
+- [Plan index](docs/plans/README.md): plan inventory and current stage.
 
-```properties
-sdk.dir=C\:\\path\\to\\android-sdk
-```
+## Current Development
 
-`local.properties` is intentionally not committed because it is machine-specific.
-
-The current Android acceptance build is `1032530` bytes. The latest release also includes regression coverage for Argentina time handling, cart merging, manual-item separation, and the computer sync client/service.
-
-The current Android acceptance build is `1032530` bytes. The latest release also includes regression coverage for Argentina time handling, cart merging, manual-item separation, and the computer sync client/service.
+Current implementation and gate status:
+[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
